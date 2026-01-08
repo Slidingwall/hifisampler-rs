@@ -4,10 +4,15 @@
 ## Warning 警告
 
 The vision of this project is to unofficially migrate hifisampler to the Rust programming language, just like its upstream project StrayCat, in order to reduce its dependencies, software size, or improve its speed. **However, please note that this project is not yet completed. Its performance may be inferior to the original Python version, and the currently generated audio also has many issues.** Due to certain reasons, I may not be able to allocate time to this project for a long period. Therefore, I have decided to publicly release the semi-finished code in advance, hoping to receive support from other developers.  
-本项目的愿景是将hifisampler非官方地与其上游项目StrayCat一样迁移至rust语言中，以减少其依赖项、软件体积或提升其速度。**但请注意，本项目没有开发完成。其性能可能不如原始的Python版本，目前生成的音频也具有颇多问题。**由于一些原因，我可能很长一段时间无法分出精力在此项目上。因此我决定先行公开半成品的代码，以期待来自其他开发者的支持。  
+本项目的愿景是将hifisampler非官方地与其上游项目StrayCat一样迁移至rust语言中，以减少其依赖项、软件体积或提升其速度。**但请注意，本项目没有开发完成。其性能可能不如原始的Python版本，目前生成的音频也具有颇多问题。** 由于一些原因，我可能很长一段时间无法分出精力在此项目上。因此我决定先行公开半成品的代码，以期待来自其他开发者的支持。  
 
 I used generative AI services to understand and convert Python and Rust code, and adopted a comment removal tool to eliminate the comments added during this process, retaining only one comment where the Python code is inconsistent with the Rust code. I have reorganized the code structure of the Rust version to align with the Python version as much as possible, removed some redundant code, and attempted to update some dependencies. Although the file extension of the cache files is consistent with that of the Python version, their actual structure may have certain differences from the Python version.  
 我借助了生成式人工智能服务来理解与转换Python及rust代码，并采用了注释移除工具移除了这个过程中添加的注释，仅保留了一处Python代码与rust代码不一致处的注释。我尽可能地按照Python版本重新组织了rust版本的代码结构、移除了一些冗余的代码，并尝试对依赖项进行了一些更新。缓存文件的后缀虽与Python版本一致，但其实际结构可能与Python版本有一定差异。  
+
+The upstream project hifisampler has not released models in ONNX format, so here is a temporary alternative version exported by myself.  
+上游项目hifisampler没有发布ONNX格式的模型，因此这里有一个我自己导出的临时替代版。  
+
+(Chinese link 中文链接)https://wwbpi.lanzouv.com/iRiJL3fmf27a
 
 ## About 关于
 This project is based on [StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs) and [hifisampler](https://github.com/openhachimi/hifisampler), and some code from [StrayCrab](https://github.com/layetri/straycrab) was also referenced.  
