@@ -1,0 +1,8 @@
+/target
+/test
+/.vscode
+/model
+/src/world
+/src/libs
+*.rc
+*.res
