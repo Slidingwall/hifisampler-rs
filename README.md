@@ -9,8 +9,8 @@ The vision of this project is to unofficially migrate hifisampler to the Rust pr
 I used generative AI services to understand and convert Python and Rust code, and adopted a comment removal tool to eliminate the comments added during this process, retaining only one comment where the Python code is inconsistent with the Rust code. I have reorganized the code structure of the Rust version to align with the Python version as much as possible, removed some redundant code, and attempted to update some dependencies. Although the file extension of the cache files is consistent with that of the Python version, their actual structure may have certain differences from the Python version.  
 我借助了生成式人工智能服务来理解与转换Python及rust代码，并采用了注释移除工具移除了这个过程中添加的注释，仅保留了一处Python代码与rust代码不一致处的注释。我尽可能地按照Python版本重新组织了rust版本的代码结构、移除了一些冗余的代码，并尝试对依赖项进行了一些更新。缓存文件的后缀虽与Python版本一致，但其实际结构可能与Python版本有一定差异。  
 
-The upstream project hifisampler has not released models in ONNX format, so here is a temporary alternative version exported by myself.  
-上游项目hifisampler没有发布ONNX格式的模型，因此这里有一个我自己导出的临时替代版。  
+The upstream project hifisampler has not released hnsep models in ONNX format, so here is a temporary alternative version exported by myself.  
+上游项目hifisampler没有发布ONNX格式的hnsep模型，因此这里有一个我自己导出的临时替代版。  
 
 (Chinese link 中文链接)https://wwbpi.lanzouv.com/iRiJL3fmf27a
 
