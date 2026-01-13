@@ -12,7 +12,7 @@ I used generative AI services to understand and convert Python and Rust code, an
 The upstream project hifisampler has not released hnsep models in ONNX format, so here is a temporary alternative version exported by myself.  
 上游项目hifisampler没有发布ONNX格式的hnsep模型，因此这里有一个我自己导出的临时替代版。  
 
-(Chinese link 中文链接)https://wwbpi.lanzouv.com/iRiJL3fmf27a
+(Chinese link 中文链接)https://wwbpi.lanzouv.com/igZpn3g2eqxa
 
 ## About 关于
 This project is based on [StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs) and [hifisampler](https://github.com/openhachimi/hifisampler), and some code from [StrayCrab](https://github.com/layetri/straycrab) was also referenced.  
