@@ -25,18 +25,22 @@ fn to_int12_stream<S: AsRef<str>>(b64: S) -> Vec<i16> {
 }
 pub fn pitch_string_to_midi(pitch_string: &str) -> Result<Vec<f64>> {
     let mut result = Vec::new();
-    for pair in pitch_string.split('#').collect::<Vec<_>>().chunks_exact(2) {
-        let pitch_str = pair[0];
-        let stream = to_int12_stream(pitch_str);
+    let parts: Vec<_> = pitch_string.split('#').collect();
+    let mut idx = 0;
+    while idx < parts.len() - 1 {
+        let stream = to_int12_stream(parts[idx]);
         result.extend(stream);
-        let rle_str = pair[1];
-        let rle = rle_str.parse::<usize>()
-            .map_err(|e| anyhow!("Invalid RLE count '{}': {}", rle_str, e))?;
+        let rle = parts[idx+1].parse::<usize>()
+            .map_err(|e| anyhow!("Invalid RLE '{}': {}", parts[idx+1], e))?;
         if rle > 0 {
             let last = result.last().copied()
-                .ok_or_else(|| anyhow!("RLE applied to empty stream (pitch: '{}')", pitch_str))?;
+                .ok_or_else(|| anyhow!("Empty pitch stream for '{}'", parts[idx]))?;
             result.extend(std::iter::repeat(last).take(rle));
         }
+        idx += 2;
+    }
+    if idx < parts.len() {
+        result.extend(to_int12_stream(parts[idx]));
     }
     Ok(result.into_iter()
         .map(|x| x as f64 / 100.0)

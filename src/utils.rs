@@ -4,7 +4,7 @@ pub mod parser;
 pub mod cache;
 pub mod growl;
 pub mod mel_basis;
-use ndarray::{Array2, Axis, s};
+use ndarray::{Array2, ArrayView2, Axis, s};
 use std::{cmp::Ordering, f64::EPSILON};
 #[inline(always)]
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -54,16 +54,18 @@ pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
     }
     result
 }
-pub fn reflect_pad_2d(arr: Array2<f64>, pad_size: usize) -> Array2<f64> {
+pub fn reflect_pad_2d(arr: ArrayView2<f64>, pad_size: usize) -> Array2<f64> {
     let (n_rows, n_cols) = arr.dim();
     if n_cols == 0 || pad_size == 0 {
-        return arr;
+        return arr.to_owned();
     }
     let mut padded = Array2::zeros((n_rows, n_cols + pad_size));
     padded.slice_mut(s![.., 0..n_cols]).assign(&arr);
+    let reflect_len = if n_cols > 1 { n_cols - 1 } else { 1 };
     (0..pad_size).for_each(|i| {
         let target_col = n_cols + i;
-        let reflect_idx = (n_cols - 2).saturating_sub(i);
+        let mirror_pos = i % reflect_len;
+        let reflect_idx = (n_cols - 2).saturating_sub(mirror_pos);
         padded.slice_mut(s![.., target_col]).assign(&arr.slice(s![.., reflect_idx]));
     });
     padded
@@ -74,7 +76,7 @@ pub fn linspace(start: f64, end: f64, n: usize) -> Vec<f64> {
         0 => Vec::new(),
         1 => vec![start],
         _ => {
-            let step = (end - start) / n as f64;
+            let step = (end - start) / (n - 1) as f64;
             (0..n).map(|i| start + step * i as f64).collect()
         }
     }
@@ -87,15 +89,21 @@ pub fn reflect_pad_1d(signal: &[f64], pad_left: usize, pad_right: usize) -> Vec<
             let val = signal[0];
             std::iter::repeat(val)
                 .take(pad_left)
-                .chain(std::iter::once(val))
+                .chain(signal.iter().cloned())
                 .chain(std::iter::repeat(val).take(pad_right))
                 .collect()
         }
         _ => {
             let reflect_left = (0..pad_left)
-                .map(|i| signal[(len - 1) - (i % (len - 1))]);
+                .map(|i| {
+                    let mirror_idx = 1 + (i % (len - 1));
+                    signal[if mirror_idx >= len { 2 * len - mirror_idx - 1 } else { mirror_idx }]
+                });
             let reflect_right = (0..pad_right)
-                .map(|i| signal[i % (len - 1)]);
+                .map(|i| {
+                    let mirror_idx = (len - 2) - (i % (len - 1));
+                    signal[mirror_idx.max(0)]
+                });
             reflect_left
                 .chain(signal.iter().cloned())
                 .chain(reflect_right)

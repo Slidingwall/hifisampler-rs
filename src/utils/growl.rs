@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Context, Result, anyhow};
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz, Type};
 use crate::utils::lerp;
 const MAX_VIBRATO_CENTS: f64 = 100.0;
@@ -10,9 +10,13 @@ fn forward_backward_filter<F: Biquad<f64>>(
     repeats: usize,
 ) {
     for _ in 0..repeats {
-        signal.iter_mut().for_each(|sample| *sample = filter.run(*sample));
+        for sample in signal.iter_mut() {
+            *sample = filter.run(*sample);
+        }
         filter.reset_state();
-        signal.iter_mut().rev().for_each(|sample| *sample = filter.run(*sample));
+        for sample in signal.iter_mut().rev() {
+            *sample = filter.run(*sample);
+        }
         filter.reset_state();
     }
 }
@@ -26,7 +30,7 @@ fn make_coefficients(
         .map_err(|_| anyhow!("Can't make filter coefficients."))
 }
 #[inline]
-fn create_highpass_coeffs(sr_f64: f64, cutoff: f64) -> biquad::Coefficients<f64> {
+fn create_highpass_coeffs(sr_f64: f64, cutoff: f64) -> Result<biquad::Coefficients<f64>> {
     let nyq = sr_f64 / 2.0;
     let clamped_cutoff = cutoff.clamp(MIN_NYQ_FRAC * nyq, 0.99 * nyq);
     make_coefficients(
@@ -34,37 +38,33 @@ fn create_highpass_coeffs(sr_f64: f64, cutoff: f64) -> biquad::Coefficients<f64>
         sr_f64,
         clamped_cutoff,
         1.0 / 2.0_f64.sqrt(),
-    ).expect("Failed to create highpass coefficients")
+    ).context("Failed to create highpass coefficients")
 }
-fn highpass_2nd(audio: &[f64], sr: i32, cutoff: f64) -> Vec<f64> {
-    let sr_f64 = sr as f64;
-    let coeffs = create_highpass_coeffs(sr_f64, cutoff);
-    let mut filtered = audio.to_vec();
+fn highpass_2nd(audio: &mut [f64], sr: f64, cutoff: f64) -> Result<()> {
+    let coeffs = create_highpass_coeffs(sr, cutoff)?;
     let mut filter = DirectForm1::new(coeffs);
-    forward_backward_filter(&mut filtered, &mut filter, 1);
-    filtered
+    forward_backward_filter(audio, &mut filter, 1);
+    Ok(())
 }
-fn highpass(audio: &[f64], sr: i32, cutoff: f64) -> (Vec<f64>, Vec<f64>) {
-    let sr_f64 = sr as f64;
-    let coeffs = create_highpass_coeffs(sr_f64, cutoff);
+fn highpass(audio: &[f64], sr: f64, cutoff: f64) -> Result<(Vec<f64>, Vec<f64>)> { 
+    let coeffs = create_highpass_coeffs(sr, cutoff)?; 
     let (mut high, mut filter1, mut filter2) = (audio.to_vec(), DirectForm1::new(coeffs), DirectForm1::new(coeffs));
     forward_backward_filter(&mut high, &mut filter1, 1);
     forward_backward_filter(&mut high, &mut filter2, 1);
     let low = audio.iter().zip(high.iter()).map(|(a, h)| a - h).collect();
-    (high, low)
+    Ok((high, low)) 
 }
-fn square_lfo(num_samples: usize, sr: i32, freq: f64) -> Vec<f64> {
+fn square_lfo(num_samples: usize, sr: f64, freq: f64) -> Vec<f64> {
     if num_samples == 0 || freq <= 0.0 {
         return vec![0.0; num_samples];
     }
-    let sr_f64 = sr as f64;
-    let samples_per_period = (sr_f64 / freq).max(1.0) as usize;
-    (0..num_samples)
-        .map(|n| {
-            let phase = (n % samples_per_period) as f64 / samples_per_period as f64;
-            if phase < 0.5 { 1.0 } else { -1.0 }
-        })
-        .collect()
+    let samples_per_period = (sr / freq).max(1.0) as usize; 
+    let mut lfo = Vec::with_capacity(num_samples);
+    lfo.extend((0..num_samples).map(|n| {
+        let phase = (n % samples_per_period) as f64 / samples_per_period as f64;
+        if phase < 0.5 { 1.0 } else { -1.0 }
+    }));
+    lfo
 }
 fn linear_interp(idx: &[f64], x: &[f64]) -> Vec<f64> {
     if x.is_empty() || idx.is_empty() {
@@ -80,15 +80,27 @@ fn linear_interp(idx: &[f64], x: &[f64]) -> Vec<f64> {
         })
         .collect()
 }
-fn apply_pitch_modulation(band: &[f64], sr: i32, lfo: &[f64], strength: f64) -> Vec<f64> {
-    assert_eq!(band.len(), lfo.len(), "Band/LFO length mismatch");
+#[inline]
+fn rms(data: &[f64]) -> f64 {
+    let sum_sq = data.iter().map(|&x| x * x).sum::<f64>();
+    (sum_sq / data.len() as f64).sqrt()
+}
+fn apply_pitch_modulation(band: &[f64], sr: f64, lfo: &[f64], strength: f64) -> Result<Vec<f64>> {
+    if band.len() != lfo.len() {
+        return Err(anyhow!(
+            "Band/LFO length mismatch: band={}, lfo={}",
+            band.len(),
+            lfo.len()
+        ));
+    }
     if band.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let band_len = band.len();
-    let ratio: Vec<f64> = lfo.iter()
-        .map(|&l| 2.0f64.powf((l * strength * MAX_VIBRATO_CENTS) / 1200.0))
-        .collect();
+    let mut ratio = Vec::with_capacity(band.len());
+    ratio.extend(lfo.iter().map(|&l| {
+        2.0f64.powf((l * strength * MAX_VIBRATO_CENTS) / 1200.0)
+    }));
     let first_ratio = ratio[0];
     let cumsum = ratio.iter().scan(0.0, |state, &r| {
         *state += r;
@@ -103,7 +115,7 @@ fn apply_pitch_modulation(band: &[f64], sr: i32, lfo: &[f64], strength: f64) -> 
         .map(|(c, i)| c - i)
         .collect::<Vec<_>>();
     if band_len > 100 {
-        drift = highpass_2nd(&drift, sr, HP_CUTOFF_HZ);
+        highpass_2nd(&mut drift, sr, HP_CUTOFF_HZ)?; 
     }
     let max_idx = (band_len - 1) as f64;
     let idx = (0..band_len)
@@ -111,24 +123,20 @@ fn apply_pitch_modulation(band: &[f64], sr: i32, lfo: &[f64], strength: f64) -> 
         .map(|(i, d)| (i as f64 + d).clamp(0.0, max_idx))
         .collect::<Vec<_>>();
     let modulated = linear_interp(&idx, band);
-    let rms = |data: &[f64]| {
-        let sum_sq = data.iter().map(|&x| x * x).sum::<f64>();
-        (sum_sq / data.len() as f64).sqrt()
-    };
     let (rms_orig, rms_new) = (rms(band), rms(&modulated));
     if rms_new > 1e-10 {
-        modulated.iter().map(|&m| m * (rms_orig / rms_new)).collect()
+        Ok(modulated.iter().map(|&m| m * (rms_orig / rms_new)).collect())
     } else {
-        modulated
+        Ok(modulated)
     }
 }
-pub fn growl(audio: &[f64], sample_rate: i32, frequency: f64, strength: f64, freq_low: f64) -> Vec<f64> {
+pub fn growl(audio: &[f64], sample_rate: f64, frequency: f64, strength: f64) -> Vec<f64> {
     if strength <= 0.0 || frequency <= 0.0 {
         return audio.to_vec();
     }
-    let (band, complement) = highpass(audio, sample_rate, freq_low);
+    let (band, complement) = highpass(audio, sample_rate, 400.).unwrap();
     let lfo = square_lfo(audio.len(), sample_rate, frequency);
-    let modulated_band = apply_pitch_modulation(&band, sample_rate, &lfo, strength);
+    let modulated_band = apply_pitch_modulation(&band, sample_rate, &lfo, strength).unwrap();
     complement.iter()
         .zip(modulated_band.iter())
         .map(|(c, m)| c + m)
@@ -164,7 +172,7 @@ mod tests {
     #[test]
     fn test_growl_no_strength() {
         let audio = vec![0.1, 0.2, 0.3, 0.4];
-        assert_eq!(growl(&audio, 44100, 80.0, 0.0, 400.0), audio);
+        assert_eq!(growl(&audio, 44100.0, 80.0, 0.0), audio);
     }
     #[test]
     fn test_lerp_import() {
@@ -172,12 +180,12 @@ mod tests {
     }
     #[test]
     fn test_highpass_2nd_vs_4th() {
-        let audio = linspace(0.0, 1.0, 1000);
-        let sr = 44100;
+        let mut audio = linspace(0.0, 1.0, 1000);
+        let sr = 44100.0;
         let cutoff = 20.0;
-        let drift_2nd = highpass_2nd(&audio, sr, cutoff);
-        let (audio_4th, _) = highpass(&audio, sr, cutoff);
-        assert_ne!(drift_2nd, audio_4th);
+        let (audio_4th, _) = highpass(&audio, sr, cutoff).unwrap();
+        highpass_2nd(&mut audio, sr, cutoff).unwrap();
+        assert_ne!(audio, audio_4th);
     }
     #[test]
     fn test_linear_interp_alignment() {
@@ -191,7 +199,7 @@ mod tests {
     }
     #[test]
     fn test_square_lfo_high_freq() {
-        let lfo = square_lfo(100, 44100, 100000.0);
+        let lfo = square_lfo(100, 44100.0, 100000.0);
         assert_eq!(lfo.len(), 100);
         assert!(lfo.iter().all(|&v| v == 1.0 || v == -1.0));
     }

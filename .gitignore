@@ -6,3 +6,4 @@
 /src/libs
 *.rc
 *.res
+hifiserver-rust.exe
