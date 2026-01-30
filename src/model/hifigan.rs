@@ -21,18 +21,10 @@ impl HiFiGANLoader {
     }
     pub fn run(&mut self, mel: Array2<f64>, f0: &[f64]) -> Result<Vec<f64>> {
         let (n_mels, n_frames) = mel.dim();
-        if n_frames != f0.len() {
-            return Err(anyhow!(
-                "Mel frame count ({}) does not match F0 length ({})",
-                n_frames,
-                f0.len()
-            ));
-        }
         let mel_vec_f32: Vec<f32> = mel
-            .permuted_axes((1, 0))  
-            .as_standard_layout()   
+            .permuted_axes((1, 0))    
             .as_slice()             
-            .ok_or_else(|| anyhow!("Mel array is not in contiguous memory layout"))?
+            .unwrap()
             .iter()
             .map(|&x| x as f32)     
             .collect();
@@ -42,18 +34,17 @@ impl HiFiGANLoader {
             .collect();
         let mel_tensor = Value::from_array(
             ([1i64, n_frames as i64, n_mels as i64], mel_vec_f32)
-        ).map_err(|_| anyhow!("Failed to create mel input tensor"))?;
+        )?;
         let f0_tensor = Value::from_array(
             ([1i64, f0.len() as i64], f0_vec_f32)
-        ).map_err(|_| anyhow!("Failed to create F0 input tensor"))?;
+        )?;
         let inputs: HashMap<_, _> = [("mel", mel_tensor), ("f0", f0_tensor)]
             .into_iter()
             .map(|(k, v)| (k.to_string(), v))
             .collect();
-        let audio_data_f64 = self.session.run(inputs)
-            .map_err(|e| anyhow!("Model inference failed: {}", e))?
+        let audio_data_f64 = self.session.run(inputs)?
             .get("waveform")
-            .ok_or_else(|| anyhow!("Output node 'waveform' not found in model"))?
+            .unwrap()
             .try_extract_tensor::<f32>()
             .map_err(|_| anyhow!("Failed to extract waveform tensor (expected f32)"))?
             .1

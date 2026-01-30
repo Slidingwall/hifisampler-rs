@@ -15,14 +15,13 @@ use symphonia::{
     default::{get_codecs, get_probe},
 };
 const I16_MAX: f64 = i16::MAX as f64;
-const I16_MIN: f64 = i16::MIN as f64;
 fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
+    let ratio = out_fs as f64 / in_fs as f64;
     if audio.is_empty() || in_fs == out_fs {
         return Ok(audio.to_vec());
     }
-    let ratio = out_fs as f64 / in_fs as f64;
+    let mut resampled = Vec::with_capacity((audio.len() as f64 * ratio).ceil() as usize);
     let chunk_size = 256.max(audio.len());
-    let expected_len = (audio.len() as f64 * ratio).ceil() as usize;
     let mut resampler = SincFixedIn::<f64>::new(
         ratio,
         2.0,
@@ -36,7 +35,6 @@ fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
         chunk_size,
         1,
     )?;
-    let mut resampled = Vec::with_capacity(expected_len);
     let mut padded = vec![0.0; chunk_size];
     for chunk in audio.chunks(chunk_size) {
         let input = if chunk.len() == chunk_size {
@@ -49,10 +47,9 @@ fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
             resampled.extend_from_slice(&output[..(output.len() * chunk.len() + chunk_size - 1) / chunk_size]);
         }
     }
-    resampler.process(&[&[]], None)?.get(0).map(|final_output| {
+    if let Some(final_output) = resampler.process(&[&[]], None)?.get(0) {
         resampled.extend_from_slice(final_output);
-    });
-    resampled.truncate(expected_len);
+    }
     Ok(resampled)
 }
 pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
@@ -72,25 +69,24 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
             ));
         }
     }
-    let source = File::open(&path).map_err(|_| anyhow!("Failed to open audio file: {}", path.display()))?;
+    let source = File::open(&path)?;
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
     let mut probed = get_probe()
-        .format(&Hint::new(), mss, &Default::default(), &Default::default())
-        .map_err(|_| anyhow!("Unsupported audio format: {}", path.display()))?;
+        .format(&Hint::new(), mss, &Default::default(), &Default::default())?;
     let track = probed
         .format
         .default_track()
         .ok_or_else(|| anyhow!("No audio track found"))?;
     let spec = SignalSpec {
-        channels: track.codec_params.channels.ok_or_else(|| anyhow!("Missing channel info"))?,
-        rate: track.codec_params.sample_rate.ok_or_else(|| anyhow!("Missing sample rate"))?,
+        channels: track.codec_params.channels.unwrap(),
+        rate: track.codec_params.sample_rate.unwrap(),
     };
     let mut decoder = get_codecs()
-        .make(&track.codec_params, &Default::default())
-        .map_err(|_| anyhow!("Failed to decode audio file"))?;
-    let mut audio = Vec::new();
+        .make(&track.codec_params, &Default::default())?;
+    let mut audio = Vec::with_capacity(409600);
     let mut packet_buffer = SampleBuffer::<f64>::new(4096, spec);
     let track_id = track.id;
+    let channels = spec.channels.count();
     while let Ok(packet) = probed.format.next_packet() {
         if packet.track_id() != track_id {
             continue;
@@ -98,19 +94,22 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
         if let Ok(decoded) = decoder.decode(&packet) {
             packet_buffer.copy_interleaved_ref(decoded);
             let samples = packet_buffer.samples();
-            if spec.channels.count() == 1 {
+            if channels == 1 {
                 audio.extend_from_slice(samples);
             } else {
                 audio.extend(
                     samples
-                        .chunks(spec.channels.count())
-                        .map(|frame| frame.iter().sum::<f64>() / spec.channels.count() as f64),
+                        .chunks(channels)
+                        .map(|frame| {
+                            let mut sum = 0.0;
+                            for &s in frame {
+                                sum += s;
+                            }
+                            sum / channels as f64
+                        }),
                 );
             }
         }
-    }
-    if audio.is_empty() {
-        return Err(anyhow!("Empty audio after decoding"));
     }
     if spec.rate == consts::SAMPLE_RATE {
         Ok(audio)
@@ -121,20 +120,19 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
 }
 pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
     let path = path.as_ref();
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate: consts::SAMPLE_RATE,
-        bits_per_sample: 16,
-        sample_format: SampleFormat::Int,
-    };
-    let file = File::create(path)
-        .map_err(|_| anyhow!("Failed to create file: {}", path.display()))?;
-    let mut writer = WavWriter::new(file, spec)
-        .map_err(|_| anyhow!("Failed to init WAV writer: {}", path.display()))?;
-    audio.iter()
-        .map(|&s| (s * I16_MAX).clamp(I16_MIN, I16_MAX) as i16)
-        .try_for_each(|sample| writer.write_sample(sample))
-        .map_err(|_| anyhow!("Failed to write audio samples: {}", path.display()))?;
+    let mut writer = WavWriter::new(
+        File::create(path)?,
+        WavSpec {
+            channels: 1,
+            sample_rate: consts::SAMPLE_RATE,
+            bits_per_sample: 16,
+            sample_format: SampleFormat::Int,
+        },
+    )?;
+    for &s in audio {
+        writer.write_sample((s * I16_MAX) as i16)
+            .map_err(|_| anyhow!("Failed to write audio samples: {}", path.display()))?;
+    }
     writer.finalize()
         .map_err(|_| anyhow!("Failed to finalize WAV: {}", path.display()))?;
     Ok(())

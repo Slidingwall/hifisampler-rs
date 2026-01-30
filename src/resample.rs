@@ -54,7 +54,7 @@ impl Resampler {
             pitchbend: pitch_string_to_midi(&args[12])?,
         }.render()
     }
-    pub fn render(&mut self) -> Result<()> {
+    fn render(&mut self) -> Result<()> {
         let features = self.get_features()?;
         self.resample(features)
     }
@@ -86,7 +86,7 @@ impl Resampler {
             .ok_or_else(|| anyhow!("Failed to save features to {}", features_path.display()))?;
         Ok(features)
     }
-    pub fn generate_features(&self) -> Result<Features> {
+    fn generate_features(&self) -> Result<Features> {
         let breath = self.flags.get("Hb").and_then(|o| o.as_ref()).copied().unwrap_or(100.);
         let voicing = self.flags.get("Hv").and_then(|o| o.as_ref()).copied().unwrap_or(100.);
         let tension = self.flags.get("Ht").and_then(|o| o.as_ref()).copied().unwrap_or(0.);
@@ -119,9 +119,8 @@ impl Resampler {
                 return Err(anyhow!("Length mismatch: wave={}, HNSEP={}", wave.len(), seg_flat.len()));
             }
             if tension != 0. {
-                let tension_clamped = tension.clamp(-100., 100.);
                 let voicing_seg: Vec<f64> = seg_flat.iter().map(|&s| voicing_scale * s).collect();
-                let emphasized = pre_emphasis_base_tension(&voicing_seg, -tension_clamped / 50.);
+                let emphasized = pre_emphasis_base_tension(&voicing_seg, -tension.clamp(-100., 100.) / 50.);
                 wave.iter_mut()
                     .zip(seg_flat)
                     .zip(emphasized.iter())
@@ -161,7 +160,7 @@ impl Resampler {
         dynamic_range_compression(&mut mel_origin);
         Ok(Features { mel_origin, scale })
     }
-    pub fn resample(&self, features: Features) -> Result<()> {
+    fn resample(&self, features: Features) -> Result<()> {
         if self.out_file.file_name().and_then(|s| s.to_str()) == Some("nul") {
             info!("Null output file - skipping write");
             return Ok(());
@@ -266,7 +265,6 @@ impl Resampler {
                 .map_or(base, |&t| base + t.clamp(-1200., 1200.) / 100.0);
             pitch_base.push(val);
         }
-        let pitch_interp = Akima::new(&pitch_base);
         let new_start = start * vel - cut_left as f64 * THOP;
         let new_end = (con * vel + length_req) - cut_left as f64 * THOP;
         let mut t_pitch = Vec::with_capacity(self.pitchbend.len());
@@ -274,6 +272,7 @@ impl Resampler {
             let val = 60.0 * i as f64 / self.tempo + new_start;
             t_pitch.push(val);
         }
+        let pitch_interp = Akima::new(&t_pitch,&pitch_base);
         let mut t = Vec::with_capacity(mel_render.ncols());
         for i in 0..mel_render.ncols() {
             let val = i as f64 * THOP;
@@ -364,7 +363,7 @@ impl Resampler {
                 .copied()
                 .unwrap_or(100.0)
                 .clamp(0.0, 100.0) as u8; 
-            render = loudness_norm(&render, SR_F64, -1.0, -16.0, p_strength);
+            render = loudness_norm(&render, SR_F64,  -16.0, p_strength);
         }
         if max > HIFI_CONFIG.peak_limit {
             render.iter_mut().for_each(|x| *x *= self.volume / max);

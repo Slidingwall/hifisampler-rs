@@ -10,7 +10,7 @@ pub struct MelAnalyzer {
 impl MelAnalyzer {
     pub fn new() -> Self {
         let mel_basis = Array2::from_shape_vec((128, 1025), MEL_BASIS_DATA.iter().flatten().cloned().collect())
-            .expect("Invalid MEL_BASIS_DATA shape (expected 128x1025)");
+            .unwrap();
         Self { mel_basis }
     }
     pub fn call(&self, wave: &[f64], key_shift: f64, speed: f64) -> Array2<f64> {
@@ -21,7 +21,7 @@ impl MelAnalyzer {
         let (pad_left, pad_right) = ((fft_size - hop_length) / 2, (fft_size - hop_length + 1) / 2);
         let padded_wave = reflect_pad_1d(wave, pad_left, pad_right);
         let complex_spec = stft_core(&padded_wave, Some(fft_size), Some(hop_length))
-            .expect("STFT failed: invalid parameters or signal length");
+            .unwrap();
         let (n_fft_bins, n_frames) = (complex_spec.nrows(), complex_spec.ncols());
         let spec = complex_spec.mapv(|c| c.norm());
         let processed_spec = if key_shift != 0. {

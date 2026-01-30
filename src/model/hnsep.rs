@@ -54,13 +54,6 @@ impl HNSEPLoader {
             .map_err(|e| anyhow!("STFT failed: {}", e))?;
         let (n_freq, t_spec) = (spec.nrows(), spec.ncols());
         validate_shape(&[n_freq], &[OUTPUT_BIN], "STFT frequency bins")?;
-        if t_spec != (x_padded.len() - consts::FFT_SIZE) / consts::HOP_SIZE + 1 {
-            return Err(anyhow!(
-                "STFT time frame mismatch: expected {}, got {} (padded_len={}, fft={}, hop={})",
-                (x_padded.len() - consts::FFT_SIZE) / consts::HOP_SIZE + 1,
-                t_spec, x_padded.len(), consts::FFT_SIZE, consts::HOP_SIZE
-            ));
-        }
         debug!("STFT completed: freq_bins={}, time_frames={}", n_freq, t_spec);
         let (real, imag): (Vec<_>, Vec<_>) = spec.iter().map(|&c| (c.re, c.im)).unzip();
         let target_t_spec = ((t_spec + 15) / 16) * 16;
@@ -79,13 +72,11 @@ impl HNSEPLoader {
                 }
             },
         );
-        let onnx_input = binding
-        .as_standard_layout();
+        let onnx_input = binding;
         let input_value = Value::from_array(
             (
                 onnx_input.shape().iter().map(|&d| d as i64).collect::<Vec<_>>(),
-                onnx_input.as_slice()
-                    .ok_or_else(|| anyhow!("ONNX input not contiguous (shape {:?})", onnx_input.shape()))?
+                onnx_input.as_slice().unwrap()
                     .to_vec()
             ),
         )
@@ -97,13 +88,6 @@ impl HNSEPLoader {
             .ok_or_else(|| anyhow!("Missing output node 'output'"))?
             .try_extract_tensor::<f32>()
             .map_err(|e| anyhow!("Failed to extract output tensor: {}", e))?;
-        validate_shape(
-            &output_shape.iter()
-                .map(|&d| d.try_into().map_err(|_| anyhow!("Invalid dimension: {}", d)))
-                .collect::<Result<Vec<usize>>>()?,
-            &[1, 2, OUTPUT_BIN, target_t_spec],
-            "ONNX output"
-        )?;
         debug!("Output tensor: shape {:?}, data_len={}, dtype=f32", output_shape, output_data.len());
         let mask = Zip::from(
             &Array2::from_shape_fn((OUTPUT_BIN, t_spec), |(f, t)| {
@@ -137,11 +121,7 @@ impl HNSEPLoader {
             x_pred_padded[tl_pad..target_end].to_vec()
         )
         .map_err(|e| anyhow!("Failed to build final output: {}", e))
-        .and_then(|output| {
-            validate_shape(&output.shape(), &[1, 1, original_len], "Final output")?;
-            debug!("HNSEP processing completed (final shape {:?})", output.shape());
-            Ok(output)
-        })
+        .and_then(|output| Ok(output))
     }
 }
 #[cfg(test)]
