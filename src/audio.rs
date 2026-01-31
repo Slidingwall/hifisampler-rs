@@ -21,7 +21,6 @@ fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
         return Ok(audio.to_vec());
     }
     let mut resampled = Vec::with_capacity((audio.len() as f64 * ratio).ceil() as usize);
-    let chunk_size = 256.max(audio.len());
     let mut resampler = SincFixedIn::<f64>::new(
         ratio,
         2.0,
@@ -32,37 +31,36 @@ fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
             interpolation: SincInterpolationType::Cubic,
             window: WindowFunction::Hann,
         },
-        chunk_size,
+        256,
         1,
     )?;
-    let mut padded = vec![0.0; chunk_size];
-    for chunk in audio.chunks(chunk_size) {
-        let input = if chunk.len() == chunk_size {
-            chunk
-        } else {
-            padded[..chunk.len()].copy_from_slice(chunk);
-            &padded
-        };
-        if let Some(output) = resampler.process(&[input], None)?.get(0) {
-            resampled.extend_from_slice(&output[..(output.len() * chunk.len() + chunk_size - 1) / chunk_size]);
-        }
+    for chunk in audio.chunks(256) {
+        let input_chunk: Vec<f64> = chunk
+            .iter()
+            .copied()
+            .chain(std::iter::repeat(0.0))
+            .take(256)
+            .collect();
+        let binding = resampler.process(&[&input_chunk], None)?;
+        let output = binding.get(0).unwrap();
+        resampled.extend_from_slice(output);
     }
-    if let Some(final_output) = resampler.process(&[&[]], None)?.get(0) {
-        resampled.extend_from_slice(final_output);
-    }
+    let binding=resampler.process(&[&[]], None)?;
+    let final_output = binding.get(0).unwrap();
+    resampled.extend_from_slice(final_output);
     Ok(resampled)
 }
 pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
     let mut path = PathBuf::from(path.as_ref());
     if !path.exists() {
         let common_extensions = ["wav", "flac", "ogg", "mp3", "aac"];
-        for ext in common_extensions {
-            path.set_extension(ext);
-            if path.exists() {
-                break;
-            }
-        }
-        if !path.exists() {
+        let found = common_extensions
+            .iter()
+            .find(|&&ext| {
+                path.set_extension(ext);
+                path.exists()
+            });
+        if found.is_none() {
             return Err(anyhow!(
                 "No supported audio file found (tried extensions: {:?})",
                 common_extensions
@@ -115,13 +113,11 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
         Ok(audio)
     } else {
         resample_audio(&audio, spec.rate, consts::SAMPLE_RATE)
-            .map_err(|_| anyhow!("Resample failed ({} → {})", spec.rate, consts::SAMPLE_RATE))
     }
 }
 pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
-    let path = path.as_ref();
     let mut writer = WavWriter::new(
-        File::create(path)?,
+        File::create(path.as_ref())?,
         WavSpec {
             channels: 1,
             sample_rate: consts::SAMPLE_RATE,
@@ -130,11 +126,9 @@ pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
         },
     )?;
     for &s in audio {
-        writer.write_sample((s * I16_MAX) as i16)
-            .map_err(|_| anyhow!("Failed to write audio samples: {}", path.display()))?;
+        writer.write_sample((s * I16_MAX) as i16)?;
     }
-    writer.finalize()
-        .map_err(|_| anyhow!("Failed to finalize WAV: {}", path.display()))?;
+    writer.finalize()?;
     Ok(())
 }
 #[cfg(test)]

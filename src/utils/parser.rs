@@ -56,9 +56,6 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
     if let Ok(v) = arg.parse::<i32>() {
         return Ok(v);
     }
-    if arg.len() < 2 {
-        return Err(anyhow!("Invalid pitch format"));
-    }
     let (note_part, octave_part) = match arg.char_indices().nth(1) {
         Some((_, c)) => {
             if c == '#' {
@@ -93,16 +90,13 @@ pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f64>>> {
         "fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
         "A", "B", "G", "P", "S", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG"
     ];
-    let re = Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", SUPPORTED_FLAGS.join("|")))
-        .map_err(|e| anyhow!("Invalid regex pattern: {}", e))?;
-    
+    let re = Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", SUPPORTED_FLAGS.join("|")))?;
     let mut flags = HashMap::new();
     for cap in re.captures_iter(&input) {
         let flag = cap.get(1).unwrap().as_str().to_string();
         let value = cap.get(2).map(|m| m.as_str().parse::<f64>().ok()).flatten();
         flags.insert(flag, value); 
     }
-    
     Ok(flags)
 }
 #[cfg(test)]

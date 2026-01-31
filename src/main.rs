@@ -28,9 +28,9 @@ async fn main() -> Result<()> {
         HIFI_CONFIG.vocoder_path.display(),
         HIFI_CONFIG.hnsep_path.display(),
     );
-    model::initialize_models()?;
+    model::initialize_models();
     tracing::info!("all_models_initialized_successfully");
     tracing::info!("starting_server_on_0.0.0.0:{}", 8572);
-    server::run(8572, HIFI_CONFIG.max_workers).await?;
+    server::run(8572, HIFI_CONFIG.max_workers).await;
     Ok(())
 }

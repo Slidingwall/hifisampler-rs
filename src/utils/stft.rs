@@ -2,7 +2,6 @@ use lazy_static::lazy_static;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 use std::{collections::HashMap, sync::Arc};
 use parking_lot::RwLock;
-use anyhow::{anyhow, Result};
 use ndarray::{s, Array2, Zip};
 use crate::consts;
 lazy_static! {
@@ -39,15 +38,9 @@ pub fn stft_core(
     signal: &[f64],
     fft_size: Option<usize>,
     hop_size: Option<usize>,
-) -> Result<Array2<Complex<f64>>> {
+) -> Array2<Complex<f64>> {
     let fft_size = fft_size.unwrap_or(consts::FFT_SIZE);
     let hop_size = hop_size.unwrap_or(consts::HOP_SIZE);
-    if signal.len() < fft_size {
-        return Err(anyhow!("Signal length {} < FFT size {}", signal.len(), fft_size));
-    }
-    if hop_size > fft_size {
-        return Err(anyhow!("Hop size {} > FFT size {}", hop_size, fft_size));
-    }
     let mut complex_spec = Array2::zeros((fft_size / 2 + 1, (signal.len() - fft_size) / hop_size + 1));
     let mut fft_buffer = vec![Complex::new(0.0, 0.0); fft_size];
     let window = get_hann_window(fft_size);
@@ -63,27 +56,17 @@ pub fn stft_core(
             &ndarray::ArrayView1::from(&fft_buffer[..fft_size / 2 + 1])
         );
     }
-    Ok(complex_spec)
+    complex_spec
 }
 pub fn istft_core(
     spec: &Array2<Complex<f64>>,
     target_len: usize,
     fft_size: Option<usize>,
     hop_size: Option<usize>,
-) -> Result<Vec<f64>> {
+) -> Vec<f64> {
     let fft_size = fft_size.unwrap_or(consts::FFT_SIZE);
     let hop_size = hop_size.unwrap_or(consts::HOP_SIZE);
     let freq_bins = fft_size / 2 + 1;
-    if spec.nrows() != freq_bins {
-        return Err(anyhow!("Spectrum bins {} != expected {}", spec.nrows(), freq_bins));
-    }
-    if ((spec.ncols() - 1) * hop_size + fft_size) < target_len {
-        return Err(anyhow!(
-            "Insufficient frames: max length {} < target {}",
-            (spec.ncols() - 1) * hop_size + fft_size,
-            target_len
-        ));
-    }
     let mut signal = vec![0.0; target_len];
     let mut window_sum = vec![0.0; target_len];
     let mut ifft_buffer = vec![Complex::new(0.0, 0.0); fft_size];
@@ -91,15 +74,11 @@ pub fn istft_core(
     let window = get_hann_window(fft_size);
     for frame_idx in 0..spec.ncols() {
         let start = frame_idx * hop_size;
-        if start >= target_len {
-            break;
-        }
         let end = start + fft_size;
         let actual_end = end.min(target_len);
         ifft_buffer[..freq_bins].copy_from_slice(
             spec.slice(s![.., frame_idx])
-                .as_slice()
-                .ok_or_else(|| anyhow!("Spectrum frame is not contiguous"))?
+                .as_slice().unwrap()
         );
         for i in 1..freq_bins - 1 {
             ifft_buffer[fft_size - i] = ifft_buffer[i].conj();
@@ -117,5 +96,5 @@ pub fn istft_core(
     signal.iter_mut().zip(window_sum.iter()).for_each(|(sig, &sum)| {
         *sig /= if sum < 1e-8 { 1e-8 } else { sum };
     });
-    Ok(signal)
+    signal
 }

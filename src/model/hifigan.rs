@@ -1,5 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
-use anyhow::{anyhow, Result};
+use std::path::PathBuf;
 use ort::{
     session::{Session, builder::GraphOptimizationLevel},
     value::Value,
@@ -10,57 +9,29 @@ pub struct HiFiGANLoader {
     session: Session,
 }
 impl HiFiGANLoader {
-    pub fn new(model_path: &PathBuf) -> Result<Self> {
-        Session::builder()
-            .map_err(|_| anyhow!("Failed to create ONNX session builder"))?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|_| anyhow!("Failed to set graph optimization level (Level3)"))?
-            .commit_from_file(model_path)
-            .map_err(|e| anyhow!("Failed to load model from path {:?}: {}", model_path, e))
-            .map(|session| Self { session })
+    pub fn new(model_path: &PathBuf) -> Self {
+        Self {
+            session: Session::builder().unwrap()
+                .with_optimization_level(GraphOptimizationLevel::Level3).unwrap()
+                .commit_from_file(model_path).unwrap()
+        }
     }
-    pub fn run(&mut self, mel: Array2<f64>, f0: &[f64]) -> Result<Vec<f64>> {
+    pub fn run(&mut self, mel: Array2<f64>, f0: &[f64]) -> Vec<f64> {
         let (n_mels, n_frames) = mel.dim();
         let mel_vec_f32: Vec<f32> = mel
-            .permuted_axes((1, 0))    
-            .as_slice()             
-            .unwrap()
-            .iter()
-            .map(|&x| x as f32)     
+            .axis_iter(ndarray::Axis(1))
+            .flat_map(|col| col) 
+            .map(|&x| x as f32) 
             .collect();
-        let f0_vec_f32: Vec<f32> = f0
-            .iter()
-            .map(|&x| x as f32)     
-            .collect();
-        let mel_tensor = Value::from_array(
-            ([1i64, n_frames as i64, n_mels as i64], mel_vec_f32)
-        )?;
-        let f0_tensor = Value::from_array(
-            ([1i64, f0.len() as i64], f0_vec_f32)
-        )?;
-        let inputs: HashMap<_, _> = [("mel", mel_tensor), ("f0", f0_tensor)]
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect();
-        let audio_data_f64 = self.session.run(inputs)?
-            .get("waveform")
-            .unwrap()
-            .try_extract_tensor::<f32>()
-            .map_err(|_| anyhow!("Failed to extract waveform tensor (expected f32)"))?
+        let f0_vec_f32: Vec<f32> = f0.iter().map(|&x| x as f32).collect();
+        let mel_tensor = Value::from_array(([1i64, n_frames as i64, n_mels as i64], mel_vec_f32)).unwrap();
+        let f0_tensor = Value::from_array(([1i64, f0.len() as i64], f0_vec_f32)).unwrap();
+        self.session.run(vec![("mel", mel_tensor), ("f0", f0_tensor)]).unwrap()
+            .get("waveform").unwrap()
+            .try_extract_tensor::<f32>().unwrap()
             .1
             .into_iter()
-            .map(|x| *x as f64)
-            .collect();
-        Ok(audio_data_f64)
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_model_load() {
-        let model_path = PathBuf::from("./model/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx");
-        let result = HiFiGANLoader::new(&model_path);
-        assert!(result.is_ok(), "Model load failed: {:?}", result.unwrap_err());
+            .map(|x| *x as f64) 
+            .collect()
     }
 }

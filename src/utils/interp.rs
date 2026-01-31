@@ -18,17 +18,12 @@ impl Akima {
         m.push(2.0 * m[m.len() - 1] - m[m.len() - 2]);
         let mut s = Vec::with_capacity(n);
         for i in 0..n {
-            let i_clamped = i.min(n - 4);
-            let m0 = m[i_clamped];
-            let m1 = m[i_clamped + 1];
-            let m2 = m[i_clamped + 2];
-            let m3 = m[i_clamped + 3];
-            let w1 = (m3 - m2).abs();
-            let w2 = (m1 - m0).abs();
+            let w1 = (m[i+3] - m[i+2]).abs();
+            let w2 = (m[i+1] - m[i]).abs();
             s.push(if w1 + w2 < Self::EPS {
-                (m1 + m2) * 0.5
+                (m[i+1] + m[i+2]) * 0.5
             } else {
-                (w1 * m1 + w2 * m2) / (w1 + w2)
+                (w1 * m[i+1] + w2 * m[i+2]) / (w1 + w2)
             });
         }
         let mut coeffs = Vec::with_capacity(n - 1);
