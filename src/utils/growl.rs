@@ -30,129 +30,99 @@ fn create_highpass_coeffs(sr_f64: f64, cutoff: f64) -> biquad::Coefficients<f64>
     .expect("Failed to create highpass coefficients: invalid sample rate or cutoff frequency")
 }
 fn highpass_2nd(audio: &mut [f64], sr: f64, cutoff: f64) {
-    let coeffs = create_highpass_coeffs(sr, cutoff); 
-    let mut filter = DirectForm1::new(coeffs);
+    let mut filter = DirectForm1::new(create_highpass_coeffs(sr, cutoff));
     forward_backward_filter(audio, &mut filter, 1);
 }
-fn highpass(audio: &[f64], sr: f64, cutoff: f64) -> (Vec<f64>, Vec<f64>) { 
-    let coeffs = create_highpass_coeffs(sr, cutoff); 
-    let mut high = audio.to_vec();
-    let mut filter = DirectForm1::new(coeffs);
+fn highpass(
+    audio: &[f64],
+    sr: f64,
+    cutoff: f64,
+) -> (Vec<f64>, Vec<f64>) { 
+    let mut high = audio.to_vec(); 
+    let mut filter = DirectForm1::new(create_highpass_coeffs(sr, cutoff));
     forward_backward_filter(&mut high, &mut filter, 2);
     let low = audio.iter()
         .zip(high.iter())
         .map(|(a, h)| a - h)
         .collect::<Vec<f64>>();
-    (high, low) 
+    (high, low)
 }
 fn square_lfo(num_samples: usize, sr: f64, freq: f64) -> Vec<f64> {
+    let mut lfo = Vec::with_capacity(num_samples);
     let samples_per_period = (sr * (1.0 / freq)) as usize;
-    (0..num_samples)
-        .map(|n| {
-            let phase = (n % samples_per_period) as f64 * (1.0 / samples_per_period as f64);
-            if phase < 0.5 { 1.0 } else { -1.0 }
-        })
-        .collect()
+    for n in 0..num_samples {
+        if (n as f64 / samples_per_period as f64).fract() < 0.5 {
+            lfo.push(1.0);
+        } else {
+            lfo.push(-1.0);
+        }
+    }
+    lfo
 }
 fn linear_interp(idx: &[f64], x: &[f64]) -> Vec<f64> {
-    idx.iter()
-        .map(|&i| {
-            let i_floor = i.floor() as usize;
+    let mut output = Vec::with_capacity(idx.len());
+    for &i in idx {
+        let i_floor = i.floor() as usize;
+        let val = if i_floor + 1 >= x.len() {
+            x[x.len() - 1]
+        } else {
             lerp(x[i_floor], x[i_floor + 1], i - (i_floor as f64))
-        })
-        .collect()
+        };
+        output.push(val);
+    }
+    output
 }
 #[inline]
 fn rms(data: &[f64]) -> f64 {
     let sum_sq = data.iter().fold(0.0, |acc, &x| acc + x * x);
     (sum_sq * (1.0 / data.len() as f64)).sqrt()
 }
-fn apply_pitch_modulation(band: &[f64], sr: f64, lfo: &[f64], strength: f64) -> Vec<f64> {
-    let mut ratio = Vec::with_capacity(band.len());
-    ratio.extend(lfo.iter().map(|&l| {
-        2.0f64.powf(l * (strength * VIBRATO_FACTOR))
-    }));
-    let mut drift = Vec::with_capacity(band.len());
-    let mean_ratio = ratio.iter().sum::<f64>() * (1.0 / band.len() as f64);
-    ratio.iter().scan(0.0, |state, &r| {
-        *state += r;
-        Some(*state - ratio[0])
-    }).enumerate().for_each(|(i, c)| {
-        let ideal_val = (i as f64) * mean_ratio;
-        drift.push(c - ideal_val);
-    });
-    highpass_2nd(&mut drift, sr, HP_CUTOFF_HZ); 
-    let idx = drift.iter().enumerate()
-        .map(|(i, d)| (i as f64 + d).clamp(0.0, (band.len() - 1) as f64))
-        .collect::<Vec<_>>();
-    let mut modulated = linear_interp(&idx, band);
-    let gain_ratio =rms(band) / rms(&modulated);
-    modulated.iter_mut().for_each(|m| *m *= gain_ratio);
+fn apply_pitch_modulation(
+    band: &[f64],
+    sr: f64,
+    lfo: &[f64],
+    strength: f64,
+) -> Vec<f64> {
+    let band_len = band.len();
+    let mut buf = lfo.iter()
+        .map(|&l| 2.0f64.powf(l * (strength * VIBRATO_FACTOR)))
+        .collect::<Vec<f64>>(); 
+    let mean_ratio = buf.iter().sum::<f64>() * (1.0 / band_len as f64);
+    let ratio_0 = buf[0];
+    let mut cumulative = 0.0;
+    for (i, val) in buf.iter_mut().enumerate() {
+        cumulative += *val;
+        *val = (cumulative - ratio_0) - (i as f64) * mean_ratio;
+    }
+    highpass_2nd(&mut buf, sr, HP_CUTOFF_HZ);
+    for (i, val) in buf.iter_mut().enumerate() {
+        *val = (i as f64 + *val).clamp(0.0, (band_len - 1) as f64);
+    }
+    let mut modulated = linear_interp(&buf, band);
+    let gain = rms(band) / rms(&modulated);
+    modulated.iter_mut().for_each(|m| *m *= gain);
     modulated
 }
-pub fn growl(audio: &[f64], sample_rate: f64, frequency: f64, strength: f64) -> Vec<f64> {
-    let (band, mut complement) = highpass(audio, sample_rate, 400.);
-    let lfo = square_lfo(audio.len(), sample_rate, frequency);
-    let modulated_band = apply_pitch_modulation(&band, sample_rate, &lfo, strength);
+pub fn growl(
+    audio: &mut Vec<f64>,
+    sample_rate: f64,
+    frequency: f64,
+    strength: f64,
+) {
+    let original_len = audio.len();
+    if original_len == 0 {
+        return;
+    }
+    let complement_original = std::mem::take(audio);
+    let (high, mut complement) = highpass(&complement_original, sample_rate, 400.0);
+    let modulated_band = apply_pitch_modulation(
+        &high,
+        sample_rate,
+        &square_lfo(original_len, sample_rate, frequency),
+        strength,
+    );
     complement.iter_mut()
         .zip(modulated_band.iter())
         .for_each(|(c, m)| *c += m);
-    complement
-}
-#[cfg(test)]
-mod tests {
-    use crate::utils::linspace;
-    const EPSILON: f64 = 1e-6; 
-    use super::*;
-    macro_rules! assert_approx_eq {
-        ($a:expr, $b:expr, $epsilon:expr) => {
-            assert!(
-                ($a - $b).abs() < $epsilon,
-                "Assertion failed: {} ≈ {} (epsilon: {}), but difference is {}",
-                $a, $b, $epsilon, ($a - $b).abs()
-            );
-        };
-        ($a:expr, $b:expr) => {
-            assert_approx_eq!($a, $b, EPSILON);
-        };
-    }
-    #[test]
-    fn test_cumsum() {
-        let ratio = vec![1.0, 2.0, 3.0];
-        let first_ratio = ratio[0];
-        let cumsum = ratio.iter().scan(0.0, |state, &r| {
-            *state += r;
-            Some(*state - first_ratio)
-        }).collect::<Vec<_>>();
-        assert_eq!(cumsum, vec![0.0, 2.0, 5.0]);
-    }
-    #[test]
-    fn test_growl_no_strength() {
-        let audio = vec![0.1, 0.2, 0.3, 0.4];
-        assert_eq!(growl(&audio, 44100.0, 80.0, 0.0), audio);
-    }
-    #[test]
-    fn test_highpass_2nd_vs_4th() {
-        let mut audio = linspace(0.0, 1.0, 1000);
-        let sr = 44100.0;
-        let cutoff = 20.0;
-        let (audio_4th, _) = highpass(&audio, sr, cutoff);
-        highpass_2nd(&mut audio, sr, cutoff);
-        assert_ne!(audio, audio_4th);
-    }
-    #[test]
-    fn test_linear_interp_alignment() {
-        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let idx = vec![0.5, 1.2, 3.7, 4.9];
-        let rust_interp = linear_interp(&idx, &x);
-        let python_expected = vec![1.5, 2.2, 4.7, 5.0];
-        for (r, p) in rust_interp.iter().zip(python_expected.iter()) {
-            assert_approx_eq!(*r, *p);
-        }
-    }
-    #[test]
-    fn test_square_lfo_high_freq() {
-        let lfo = square_lfo(100, 44100.0, 100000.0);
-        assert!(lfo.iter().all(|&v| v == 1.0 || v == -1.0));
-    }
+    *audio = complement;
 }

@@ -4,7 +4,7 @@ pub const HOP_SIZE: usize = 512;
 pub const ORIGIN_HOP_SIZE: usize = 128;
 pub const FEATURE_EXT: &str = "hifi.npz";
 use ini::Ini;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq)]
@@ -19,9 +19,7 @@ pub struct HifiConfig {
     pub fill: usize,
     pub max_workers: usize,
 }
-lazy_static! {
-    pub static ref HIFI_CONFIG: HifiConfig = load_hifi_config();
-}
+pub static HIFI_CONFIG: Lazy<HifiConfig> = Lazy::new(|| load_hifi_config());
 fn load_hifi_config() -> HifiConfig {
     let ini = match Ini::load_from_file("hificonfig.ini") {
         Ok(ini) => ini,

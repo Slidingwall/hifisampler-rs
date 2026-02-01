@@ -5,8 +5,8 @@ This project is based on [StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs
 本项目基于[StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs)与[hifisampler](https://github.com/openhachimi/hifisampler)，同时还参考了部分[StrayCrab](https://github.com/layetri/straycrab)的代码。  
 
 > [!CAUTION]
-> **Please note that this project is not yet completed. Its performance may be inferior to the original Python version, and the currently generated audio also has many issues.**  
-> **请注意，本项目没有开发完成。其性能可能不如原始的Python版本，目前生成的音频也具有颇多问题。**  
+> **Please note that this project is not yet completed. Its performance may be inferior to the original Python version.**  
+> **请注意，本项目没有开发完成。其性能可能不如原始的Python版本。**  
 > 
 > Due to certain reasons, I may not be able to allocate time to this project for a long period. Therefore, I have decided to publicly release the semi-finished code in advance, hoping to receive support from other developers.  
 > 由于一些原因，我可能很长一段时间无法分出精力在此项目上。因此我决定先行公开半成品的代码，以期待来自其他开发者的支持。  
@@ -19,8 +19,8 @@ The vision of this project is to unofficially migrate hifisampler to the Rust pr
 Due to differences in the programming languages and libraries used, this project may not 100% replicate all functions of hifisampler, and the generated results may also differ from those of hifisampler. Furthermore, the latest fixes and features of hifisampler may not be promptly updated in this project.  
 由于所采用的编程语言和库不同，本项目可能不会100%复现hifisampler的全部功能，生成结果也可能与hifisampler有所出入。此外，hifisampler最新的修复、功能也可能无法及时更新到本项目中。  
 
-I used generative AI services to understand and convert Python and Rust code, and adopted a comment removal tool to eliminate the comments added during this process, retaining only one comment where the Python code is inconsistent with the Rust code. I have reorganized the code structure of the Rust version to align with the Python version as much as possible, removed some redundant code, and attempted to update some dependencies. Although the file extension of the cache files is consistent with that of the Python version, their actual structure may have certain differences from the Python version.  
-我借助了生成式人工智能服务来理解与转换Python及rust代码，并采用了注释移除工具移除了这个过程中添加的注释，仅保留了一处Python代码与rust代码不一致处的注释。我尽可能地按照Python版本重新组织了rust版本的代码结构、移除了一些冗余的代码，并尝试对依赖项进行了一些更新。缓存文件的后缀虽与Python版本一致，但其实际结构可能与Python版本有一定差异。  
+I used generative AI services to understand and convert Python and Rust code, and adopted a comment removal tool to eliminate the comments added during this process,. I have reorganized the code structure of the Rust version to align with the Python version as much as possible, removed some redundant code, and attempted to update some dependencies. Although the file extension of the cache files is consistent with that of the Python version, their actual structure may have certain differences from the Python version.  
+我借助了生成式人工智能服务来理解与转换Python及rust代码，并采用了注释移除工具移除了这个过程中添加的注释。我尽可能地按照Python版本重新组织了rust版本的代码结构、移除了一些冗余的代码，并尝试对依赖项进行了一些更新。缓存文件的后缀虽与Python版本一致，但其实际结构可能与Python版本有一定差异。  
 
 ## Using 使用
 

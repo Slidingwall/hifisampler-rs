@@ -16,7 +16,7 @@ pub fn midi_to_hz(x: f64) -> f64 {
 }
 #[inline(always)]
 pub fn dynamic_range_compression(signal: &mut Array2<f64>) {
-    signal.mapv_inplace(|x| (x * 0.1).max(1e-9).ln()); // Scaling by 0.1 is necessary here: Rust's mel magnitudes are 10x larger for unknown reasons.
+    signal.mapv_inplace(|x| x.max(1e-9).ln());
 }
 pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
     let n_x = x.len();
@@ -58,17 +58,6 @@ pub fn reflect_pad_2d(arr: ArrayView2<f64>, pad_size: usize) -> Array2<f64> {
     });
     padded
 }
-#[inline]
-pub fn linspace(start: f64, end: f64, n: usize) -> Vec<f64> {
-    match n {
-        0 => Vec::new(),
-        1 => vec![start],
-        _ => {
-            let step = (end - start) / (n - 1) as f64;
-            (0..n).map(|i| start + step * i as f64).collect()
-        }
-    }
-}
 pub fn reflect_pad_1d(signal: &mut Vec<f64>, pad_left: usize, pad_right: usize) {
     let len = signal.len();
     let original_slice = &signal[..];
@@ -86,4 +75,16 @@ pub fn reflect_pad_1d(signal: &mut Vec<f64>, pad_left: usize, pad_right: usize) 
         .collect();
     signal.extend(right_pad_data);
     signal.splice(0..0, left_pad_data);
+}
+#[cfg(test)]
+#[inline]
+pub fn linspace(start: f64, end: f64, n: usize) -> Vec<f64> {
+    match n {
+        0 => Vec::new(),
+        1 => vec![start],
+        _ => {
+            let step = (end - start) / (n - 1) as f64;
+            (0..n).map(|i| start + step * i as f64).collect()
+        }
+    }
 }

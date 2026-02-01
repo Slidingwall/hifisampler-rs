@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use ndarray::{Array0, Array2, Array3};
+use ndarray::{Array0, Array1, Array2};
 use ndarray_npy::{read_npy, write_npy, NpzReader, NpzWriter};
 use tracing::{info, warn};
 use once_cell::sync::Lazy;
@@ -115,7 +115,7 @@ impl CacheManager {
         info!("Cache loaded: {}", path.display());
         Some(Features { mel_origin, scale: scale_arr.into_scalar() })
     }
-    pub fn load_hnsep_cache(&self, path: &Path, force_generate: bool) -> Option<Array3<f64>> {
+    pub fn load_hnsep_cache(&self, path: &Path, force_generate: bool) -> Option<Vec<f64>> {
         if force_generate || !path.exists() {
             return None;
         }
@@ -124,9 +124,10 @@ impl CacheManager {
         defer! {
             let _ = self.lock_manager.release(path);
         }
-        let data = read_npy::<_, Array3<f64>>(path).unwrap();
-        info!("Hnsep cache loaded: {}", path.display());
-        Some(data)
+        let arr1_data = read_npy::<_, Array1<f64>>(path).unwrap();
+        let vec_data = arr1_data.to_vec();
+        info!("Hnsep cache loaded: {} (length: {})", path.display(), vec_data.len());
+        Some(vec_data)
     }
     pub fn save_features_cache(&self, path: &Path, features: &Features) -> Option<Features> {
         self.validate_file_path(path);
@@ -148,7 +149,7 @@ impl CacheManager {
         info!("Features saved to: {}", path.display());
         Some(features.clone())
     }
-    pub fn save_hnsep_cache(&self, path: &Path, data: &Array3<f64>) -> Option<Array3<f64>> {
+    pub fn save_hnsep_cache(&self, path: &Path, data: Vec<f64>) -> Option<Vec<f64>> {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! {
@@ -159,10 +160,11 @@ impl CacheManager {
             return self.load_hnsep_cache(path, false);
         }
         let temp_path = path.with_extension("tmp");
-        write_npy(&temp_path, data).unwrap();
+        let arr1_data = Array1::from_vec(data);
+        write_npy(&temp_path, &arr1_data).unwrap();
         fs::rename(&temp_path, path).unwrap();
-        info!("Hnsep saved to: {}", path.display());
-        Some(data.clone())
+        info!("Hnsep saved to: {} (length: {})", path.display(), arr1_data.len());
+        Some(arr1_data.to_vec())
     }
 }
 pub static CACHE_MANAGER: Lazy<CacheManager> = Lazy::new(CacheManager::default);

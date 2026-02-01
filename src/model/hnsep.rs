@@ -3,8 +3,8 @@ use ort::{
     session::{Session, builder::GraphOptimizationLevel},
     value::Value,
 };
-use ndarray::{Array2, Array3, Array4, ArrayView3, Zip};
-use rustfft::num_complex::Complex;
+use ndarray::{Array2, Array4, Zip};
+use oxifft::Complex;
 use crate::{consts, utils::stft::*};
 const SEG_LENGTH: usize = 32 * consts::HOP_SIZE;
 const OUTPUT_BIN: usize = consts::FFT_SIZE / 2 + 1;
@@ -20,7 +20,7 @@ impl HNSEPLoader {
                 .commit_from_file(model_path).unwrap()
         }
     }
-    pub fn run(&mut self, wave: &[f64]) -> Array3<f64> {
+    pub fn run(&mut self, wave: &[f64]) -> Vec<f64> {
         let original_len = wave.len();
         let tl_pad = ((SEG_LENGTH * (((original_len + consts::HOP_SIZE - 1) / SEG_LENGTH + 1) - 1) 
             - (original_len + consts::HOP_SIZE)) / 2 / consts::HOP_SIZE) * consts::HOP_SIZE;
@@ -70,15 +70,14 @@ impl HNSEPLoader {
             })
         )
         .map_collect(|&re, &im| Complex::new(re, im));
-        let x_pred_padded = istft_core(
+        let mut x_pred_padded = istft_core(
             &(spec * &mask),
             (t_spec - 1) * consts::HOP_SIZE + consts::FFT_SIZE,
             Some(consts::FFT_SIZE),
             Some(consts::HOP_SIZE),
         );
-        ArrayView3::from_shape(
-            (1, 1, original_len),
-            &x_pred_padded[tl_pad..tl_pad + original_len]
-        ).unwrap().to_owned()
+        x_pred_padded.drain(0..tl_pad);
+        x_pred_padded.truncate(original_len);
+        x_pred_padded
     }
 }

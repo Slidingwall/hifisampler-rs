@@ -3,15 +3,20 @@ use crate::{
     utils::{mel_basis::MEL_BASIS_DATA, reflect_pad_1d, stft::stft_core},
 };
 use ndarray::{s, Array2};
-const TARGET_BINS: usize = consts::FFT_SIZE / 2 + 1; 
+use sprs::CsMat; 
+const TARGET_BINS: usize = consts::FFT_SIZE / 2 + 1;
 #[derive(Debug)]
 pub struct MelAnalyzer {
-    mel_basis: Array2<f64>,
+    mel_basis: CsMat<f64>,
 }
 impl MelAnalyzer {
     pub fn new() -> Self {
-        let mel_basis = Array2::from_shape_vec((128, 1025), MEL_BASIS_DATA.iter().flatten().cloned().collect())
-            .unwrap();
+        let (n_mels, n_bins) = (128, 1025);
+        let mut tri_mat = sprs::TriMat::new((n_mels, n_bins));
+        for &(i, j, val) in MEL_BASIS_DATA.iter() {
+            tri_mat.add_triplet(i, j, val);
+        }
+         let mel_basis = tri_mat.to_csc(); 
         Self { mel_basis }
     }
     pub fn call(&self, wave: &mut Vec<f64>, key_shift: f64, speed: f64) -> Array2<f64> {
@@ -37,7 +42,8 @@ impl MelAnalyzer {
         } else {
             spec
         };
-        self.mel_basis.dot(&processed_spec)
+        let mel_spec = &self.mel_basis * &processed_spec.view();
+        mel_spec
     }
 }
 #[cfg(test)]
@@ -47,7 +53,7 @@ mod tests {
     #[test]
     fn test_mel_analyzer() {
         let analyzer = MelAnalyzer::new();
-        let sample_len = consts::FFT_SIZE * 10; 
+        let sample_len = consts::FFT_SIZE * 10;
         let mut y = linspace(0., 1., sample_len);
         let mel_spec = analyzer.call(&mut y, 0., 1.0);
         let (pad_left, pad_right) = ((consts::FFT_SIZE - consts::HOP_SIZE) / 2, (consts::FFT_SIZE - consts::HOP_SIZE + 1) / 2);
