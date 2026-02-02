@@ -1,4 +1,3 @@
-
 pub const MEL_BASIS_DATA: &'static [(usize, usize, f64)] = &[
     (0, 2, 0.00383336423),
     (0, 3, 0.030752370134),

@@ -595,6 +595,7 @@ dependencies = [
  "ort",
  "oxifft",
  "parking_lot",
+ "rayon",
  "regex",
  "rubato",
  "rust-ini",
@@ -849,6 +850,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+ "rayon",
 ]
 
 [[package]]

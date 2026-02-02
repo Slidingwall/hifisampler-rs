@@ -1,5 +1,5 @@
 use bs1770::{ChannelLoudnessMeter, gated_mean};
-use ndarray::{Array2, Axis};
+use ndarray::{Array2, Axis, parallel::prelude::*};
 use oxifft::Complex;
 use crate::{
     consts::{FFT_SIZE, HOP_SIZE, HIFI_CONFIG, SAMPLE_RATE},
@@ -14,22 +14,27 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
     let padded_len = ((original_len + HOP_SIZE - 1) / HOP_SIZE) * HOP_SIZE;
     wave.resize(padded_len, 0.0);
     let complex_spec = stft_core(&*wave, None, None);
-    let (spec_amp, spec_phase) = (
-        complex_spec.mapv(|c| c.norm()),
-        complex_spec.mapv(|c| c.arg())
-    );
-    let mut spec_amp_db = spec_amp.mapv(|x| x.max(1e-9).ln());
-    spec_amp_db.axis_iter_mut(Axis(0))
+    let mut spec_amp = Array2::zeros(complex_spec.dim());
+    let mut spec_phase = Array2::zeros(complex_spec.dim());
+    par_azip!((amp_val in &mut spec_amp, &c in &complex_spec) {
+        *amp_val = c.norm();
+    });
+    par_azip!((phase_val in &mut spec_phase, &c in &complex_spec) {
+        *phase_val = c.arg();
+    });
+    spec_amp.par_mapv_inplace(|x| x.max(1e-9).ln());
+    spec_amp.axis_iter_mut(Axis(0))
+        .into_par_iter()
         .enumerate()
         .for_each(|(j, mut bin)| {
             let filter = b * (1.0 - (SAMPLE_RATE as f64 * j as f64) / (FFT_SIZE / 1500 + 3000) as f64);
             let clamped_filter = filter.clamp(-2.0, 2.0);
             bin.iter_mut().for_each(|amp_db| *amp_db += clamped_filter);
         });
-    let complex_spec_istft = Array2::from_shape_fn((FFT_SIZE / 2 + 1, complex_spec.ncols()), |(k, t)| {
-        let phase = spec_phase[(k, t)];
-        let amp = spec_amp_db[(k, t)].exp();
-        Complex::new(amp * phase.cos(), amp * phase.sin())
+    let mut complex_spec_istft = Array2::from_elem((FFT_SIZE / 2 + 1, complex_spec.ncols()), Complex::zero());
+    par_azip!((complex_val in &mut complex_spec_istft, &phase in &spec_phase, &amp_db in &spec_amp) {
+        let amp = amp_db.exp();
+        *complex_val = Complex::new(amp * phase.cos(), amp * phase.sin());
     });
     let mut filtered_wave = istft_core(&complex_spec_istft, wave.len(), None, None);
     let filtered_max = filtered_wave.iter()

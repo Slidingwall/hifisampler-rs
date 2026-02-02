@@ -16,7 +16,7 @@ pub fn midi_to_hz(x: f64) -> f64 {
 }
 #[inline(always)]
 pub fn dynamic_range_compression(signal: &mut Array2<f64>) {
-    signal.mapv_inplace(|x| x.max(1e-9).ln());
+    signal.par_mapv_inplace(|x| x.max(1e-9).ln());
 }
 pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
     let n_x = x.len();

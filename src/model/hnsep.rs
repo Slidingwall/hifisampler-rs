@@ -3,7 +3,7 @@ use ort::{
     session::{Session, builder::GraphOptimizationLevel},
     value::Value,
 };
-use ndarray::{Array2, Array4, Zip};
+use ndarray::{Array2, Array4, parallel::prelude::*};
 use oxifft::Complex;
 use crate::{consts, utils::stft::*};
 const SEG_LENGTH: usize = 32 * consts::HOP_SIZE;
@@ -32,25 +32,29 @@ impl HNSEPLoader {
         x_padded.extend(std::iter::repeat(0.0).take(tr_pad));
         let spec = stft_core(&x_padded, Some(consts::FFT_SIZE), Some(consts::HOP_SIZE));
         let t_spec = spec.ncols();
-        let (real, imag): (Vec<_>, Vec<_>) = spec.iter().map(|&c| (c.re as f32, c.im as f32)).unzip();
+        let (real, imag): (Vec<f32>, Vec<f32>) = spec
+            .par_iter() 
+            .map(|&c| {
+                (c.re as f32, c.im as f32)
+            })
+            .unzip();
         let target_t_spec = ((t_spec + 15) / 16) * 16;
+        let mut arr4 = Array4::from_elem((1, 2, OUTPUT_BIN, target_t_spec), 0.0f32);
+        par_azip!((index (_, c, f, t), val in &mut arr4) {
+            if t < t_spec {
+                *val = match c {
+                    0 => real[f + t * OUTPUT_BIN],
+                    1 => imag[f + t * OUTPUT_BIN],
+                    _ => 0.0,
+                };
+            } else {
+                *val = 0.0;
+            }
+        });
         let input_value = Value::from_array(
             (
                 [1, 2, OUTPUT_BIN as i64, target_t_spec as i64].to_vec(),
-                Array4::from_shape_fn(
-                    (1, 2, OUTPUT_BIN, target_t_spec),
-                    |(_, c, f, t)| -> f32 {
-                        if t < t_spec {
-                            match c {
-                                0 => real[f + t * OUTPUT_BIN],
-                                1 => imag[f + t * OUTPUT_BIN],
-                                _ => 0.0,
-                            }
-                        } else {
-                            0.0
-                        }
-                    },
-                ).into_raw_vec_and_offset().0
+                arr4.into_raw_vec_and_offset().0
             ),
         ).unwrap();
         let outputs = self.session.run(vec![("input", input_value)]).unwrap();
@@ -59,19 +63,17 @@ impl HNSEPLoader {
             .try_extract_tensor::<f32>()
             .unwrap()
             .1;
-        let mask = Zip::from(
-            &Array2::from_shape_fn((OUTPUT_BIN, t_spec), |(f, t)| {
-                output_data[f + t * OUTPUT_BIN] as f64
-            })
-        )
-        .and(
-            &Array2::from_shape_fn((OUTPUT_BIN, t_spec), |(f, t)| {
-                output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN] as f64
-            })
-        )
-        .map_collect(|&re, &im| Complex::new(re, im));
+        let mut spec_corrected = Array2::from_elem(spec.dim(), Complex::new(0.0, 0.0));
+        par_azip!((index (f, t), sc_val in &mut spec_corrected, &s_val in &spec) {
+            let re = output_data[f + t * OUTPUT_BIN] as f64;
+            let im = output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN] as f64;
+            *sc_val = Complex::new(
+                s_val.re * re - s_val.im * im,
+                s_val.re * im + s_val.im * re
+            );
+        });
         let mut x_pred_padded = istft_core(
-            &(spec * &mask),
+            &spec_corrected,
             (t_spec - 1) * consts::HOP_SIZE + consts::FFT_SIZE,
             Some(consts::FFT_SIZE),
             Some(consts::HOP_SIZE),

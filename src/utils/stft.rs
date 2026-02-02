@@ -34,16 +34,17 @@ pub fn istft_core(
     if n_frames == 0 || freq_bins == 0 || freq_bins != fft_size / 2 + 1 {
         return vec![0.0; target_len];
     }
-    let mut oxifft_spectrogram = Vec::with_capacity(n_frames);
+    let mut fft_spec = Vec::with_capacity(n_frames);
     for frame_idx in 0..n_frames {
-        let frame_vec: Vec<Complex<f64>> = spec.slice(s![.., frame_idx]).to_vec();
-        oxifft_spectrogram.push(frame_vec);
+        let mut frame_vec = vec![Complex::zero(); freq_bins];
+        frame_vec.copy_from_slice(spec.slice(s![.., frame_idx]).as_slice().unwrap());
+        fft_spec.push(frame_vec);
     }
-    let mut reconstructed = istft(&oxifft_spectrogram, hop_size, WindowFunction::Hann);
-    if reconstructed.len() >= target_len {
-        reconstructed.truncate(target_len);
+    let mut result = istft(&fft_spec, hop_size, WindowFunction::Hann);
+    if result.len() >= target_len {
+        result.truncate(target_len);
     } else {
-        reconstructed.resize(target_len, 0.0);
+        result.resize(target_len, 0.0);
     }
-    reconstructed
+    result
 }
