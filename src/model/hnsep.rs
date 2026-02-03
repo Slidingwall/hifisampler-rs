@@ -53,7 +53,7 @@ impl HNSEPLoader {
         });
         let input_value = Value::from_array(
             (
-                [1, 2, OUTPUT_BIN as i64, target_t_spec as i64].to_vec(),
+                vec![1, 2, OUTPUT_BIN as i64, target_t_spec as i64],
                 arr4.into_raw_vec_and_offset().0
             ),
         ).unwrap();
@@ -63,7 +63,7 @@ impl HNSEPLoader {
             .try_extract_tensor::<f32>()
             .unwrap()
             .1;
-        let mut spec_corrected = Array2::from_elem(spec.dim(), Complex::new(0.0, 0.0));
+        let mut spec_corrected = Array2::from_elem(spec.dim(), Complex::zero());
         par_azip!((index (f, t), sc_val in &mut spec_corrected, &s_val in &spec) {
             let re = output_data[f + t * OUTPUT_BIN] as f64;
             let im = output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN] as f64;

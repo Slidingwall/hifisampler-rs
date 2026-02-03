@@ -1,19 +1,13 @@
 use anyhow::Result;
-use ndarray::{s, Array2, Axis};
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-};
+use ndarray::{Array2, Axis, concatenate, s};
+use std::{ collections::HashMap, path::PathBuf };
 use tracing::info;
 use crate::{
-    audio::{
-        post_process::{loudness_norm, pre_emphasis_base_tension},
-        read_audio, write_audio,
-    },
+    audio::{ post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio },
     consts::{self, HIFI_CONFIG},
-    model::{get_mel_analyzer, get_remover, get_vocoder},
+    model::{get_remover, get_vocoder},
     utils::{
-        cache::{CACHE_MANAGER, Features}, dynamic_range_compression, growl::growl, interp::Akima, interp1d, midi_to_hz, parser::{pitch_parser, pitch_string_to_midi, tempo_parser, flag_parser}, reflect_pad_2d,
+        cache::{CACHE_MANAGER, Features}, dynamic_range_compression, growl::growl, interp::Akima, interp1d, midi_to_hz, mel::mel, parser::{flag_parser, pitch_parser, pitch_string_to_midi, tempo_parser}, reflect_pad_2d
     },
 };
 const SR_F64: f64 = consts::SAMPLE_RATE as f64;
@@ -139,7 +133,7 @@ impl Resampler {
         };
         let gender = self.flags.get("g").and_then(|o| o.as_ref()).copied().unwrap().clamp(-600., 600.);
         info!("Gender adjustment: {}", gender);
-        let mut mel_origin = get_mel_analyzer().call(&mut wave, gender / 100., 1.);
+        let mut mel_origin = mel(&mut wave, gender / 100., 1.);
         info!("Mel shape: {:?}", mel_origin.dim());
         dynamic_range_compression(&mut mel_origin);
         Ok(Features { mel_origin, scale })
@@ -179,10 +173,7 @@ impl Resampler {
             let mel_loop = mel_origin.slice(s![.., start_idx..end_idx]);
             let pad_size = (length_req / THOP_ORIGIN).floor() as usize + 1;
             let padded_mel = reflect_pad_2d(mel_loop, pad_size);
-            *mel_origin = ndarray::concatenate(
-                Axis(1),
-                &[mel_origin.slice(s![.., 0..start_idx]).view(), padded_mel.view()]
-            )?;
+            *mel_origin = concatenate![Axis(1), mel_origin.slice(s![.., 0..start_idx]), padded_mel];
             stretch_length = pad_size as f64 * THOP_ORIGIN;
             t_area_origin = Vec::with_capacity(mel_origin.ncols()); 
             for i in 0..mel_origin.ncols() {
