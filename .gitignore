@@ -7,3 +7,4 @@
 *.rc
 *.res
 hifiserver-rust.exe
+flamegraph.svg
