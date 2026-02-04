@@ -4,16 +4,16 @@ use std::{ collections::HashMap, path::PathBuf };
 use tracing::info;
 use crate::{
     audio::{ post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio },
-    consts::{self, HIFI_CONFIG},
+    consts::{SAMPLE_RATE, ORIGIN_HOP_SIZE, HOP_SIZE, FEATURE_EXT, HIFI_CONFIG},
     model::{get_remover, get_vocoder},
     utils::{
         cache::{CACHE_MANAGER, Features}, dynamic_range_compression, growl::growl, interp::Akima, interp1d, midi_to_hz, mel::mel, parser::{flag_parser, pitch_parser, pitch_string_to_midi, tempo_parser}, reflect_pad_2d
     },
 };
-const SR_F64: f64 = consts::SAMPLE_RATE as f64;
-const THOP_ORIGIN: f64 = consts::ORIGIN_HOP_SIZE as f64 / SR_F64;
+const SR_F64: f64 = SAMPLE_RATE as f64;
+const THOP_ORIGIN: f64 = ORIGIN_HOP_SIZE as f64 / SR_F64;
 const THOP_ORIGIN_HALF: f64 = THOP_ORIGIN / 2.0;
-const THOP: f64 = consts::HOP_SIZE as f64 / SR_F64;
+const THOP: f64 = HOP_SIZE as f64 / SR_F64;
 const THOP_HALF: f64 = THOP / 2.0;
 pub struct Resampler {
     in_file: PathBuf,
@@ -62,7 +62,7 @@ impl Resampler {
             .collect::<Vec<_>>()
             .join("_");
         let stem = self.in_file.file_stem().unwrap().to_str().unwrap();
-        let cache_name = format!("{}_{}{}", stem, flag_suffix, consts::FEATURE_EXT);
+        let cache_name = format!("{}_{}{}", stem, flag_suffix, FEATURE_EXT);
         let features_path = self.in_file.with_file_name(cache_name);
         let force_generate = self.flags.contains_key("G");
         if let Some(features) = CACHE_MANAGER.load_features_cache(&features_path, force_generate) {
@@ -213,8 +213,7 @@ impl Resampler {
             *t = stretch(*t).clamp(0.0, t_area_origin.last().copied().unwrap());
         });
         let mel_render = interp1d(&t_area_origin, &mel_origin, &stretched_t_mel);
-        info!("Render mel shape: {:?}", mel_render.dim());
-        info!("Processing pitch");
+        info!("Render mel shape: {:?}, Processing pitch...", mel_render.dim());
         let mut pitch_base = Vec::with_capacity(self.pitchbend.len());
         for &pb in &self.pitchbend {
             let base = pb + self.pitch;

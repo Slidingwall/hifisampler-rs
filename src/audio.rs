@@ -1,5 +1,5 @@
 pub mod post_process;
-use crate::consts;
+use crate::consts::SAMPLE_RATE;
 use anyhow::{anyhow, Result};
 use hound::{SampleFormat, WavSpec, WavWriter};
 use rubato::{
@@ -109,10 +109,10 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
             }
         }
     }
-    if spec.rate == consts::SAMPLE_RATE {
+    if spec.rate == SAMPLE_RATE {
         Ok(audio)
     } else {
-        resample_audio(&audio, spec.rate, consts::SAMPLE_RATE)
+        resample_audio(&audio, spec.rate, SAMPLE_RATE)
     }
 }
 pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
@@ -120,7 +120,7 @@ pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
         File::create(path.as_ref())?,
         WavSpec {
             channels: 1,
-            sample_rate: consts::SAMPLE_RATE,
+            sample_rate: SAMPLE_RATE,
             bits_per_sample: 16,
             sample_format: SampleFormat::Int,
         },

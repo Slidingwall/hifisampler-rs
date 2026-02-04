@@ -13,7 +13,7 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
         .unwrap_or(1.0); 
     let padded_len = ((original_len + HOP_SIZE - 1) / HOP_SIZE) * HOP_SIZE;
     wave.resize(padded_len, 0.0);
-    let complex_spec = stft_core(&*wave, None, None);
+    let complex_spec = stft_core(&*wave, FFT_SIZE, HOP_SIZE);
     let mut spec_amp = Array2::zeros(complex_spec.dim());
     let mut spec_phase = Array2::zeros(complex_spec.dim());
     par_azip!((amp_val in &mut spec_amp, &c in &complex_spec) {
@@ -36,7 +36,7 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
         let amp = amp_db.exp();
         *complex_val = Complex::new(amp * phase.cos(), amp * phase.sin());
     });
-    let mut filtered_wave = istft_core(&complex_spec_istft, wave.len(), None, None);
+    let mut filtered_wave = istft_core(&complex_spec_istft, wave.len(), FFT_SIZE, HOP_SIZE);
     let filtered_max = filtered_wave.iter()
         .map(|x| x.abs())
         .max_by(|a, b| a.total_cmp(b))

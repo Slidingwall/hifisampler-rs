@@ -5,9 +5,9 @@ use ort::{
 };
 use ndarray::{Array2, Array4, parallel::prelude::*};
 use oxifft::Complex;
-use crate::{consts, utils::stft::*};
-const SEG_LENGTH: usize = 32 * consts::HOP_SIZE;
-const OUTPUT_BIN: usize = consts::FFT_SIZE / 2 + 1;
+use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::stft::*};
+const SEG_LENGTH: usize = 32 * HOP_SIZE;
+const OUTPUT_BIN: usize = FFT_SIZE / 2 + 1;
 #[derive(Debug)]
 pub struct HNSEPLoader {
     session: Session,
@@ -22,15 +22,15 @@ impl HNSEPLoader {
     }
     pub fn run(&mut self, wave: &[f64]) -> Vec<f64> {
         let original_len = wave.len();
-        let tl_pad = ((SEG_LENGTH * (((original_len + consts::HOP_SIZE - 1) / SEG_LENGTH + 1) - 1) 
-            - (original_len + consts::HOP_SIZE)) / 2 / consts::HOP_SIZE) * consts::HOP_SIZE;
-        let tr_pad = SEG_LENGTH * (((original_len + consts::HOP_SIZE - 1) / SEG_LENGTH + 1)) 
-            - (original_len + consts::HOP_SIZE) - tl_pad;
+        let tl_pad = ((SEG_LENGTH * (((original_len + HOP_SIZE - 1) / SEG_LENGTH + 1) - 1) 
+            - (original_len + HOP_SIZE)) / 2 / HOP_SIZE) * HOP_SIZE;
+        let tr_pad = SEG_LENGTH * (((original_len + HOP_SIZE - 1) / SEG_LENGTH + 1)) 
+            - (original_len + HOP_SIZE) - tl_pad;
         let mut x_padded = Vec::with_capacity(tl_pad + original_len + tr_pad);
         x_padded.extend(std::iter::repeat(0.0).take(tl_pad));
         x_padded.extend_from_slice(wave);
         x_padded.extend(std::iter::repeat(0.0).take(tr_pad));
-        let spec = stft_core(&x_padded, Some(consts::FFT_SIZE), Some(consts::HOP_SIZE));
+        let spec = stft_core(&x_padded, FFT_SIZE, HOP_SIZE);
         let t_spec = spec.ncols();
         let (real, imag): (Vec<f32>, Vec<f32>) = spec
             .par_iter() 
@@ -74,9 +74,9 @@ impl HNSEPLoader {
         });
         let mut x_pred_padded = istft_core(
             &spec_corrected,
-            (t_spec - 1) * consts::HOP_SIZE + consts::FFT_SIZE,
-            Some(consts::FFT_SIZE),
-            Some(consts::HOP_SIZE),
+            (t_spec - 1) * HOP_SIZE + FFT_SIZE,
+            FFT_SIZE,
+            HOP_SIZE,
         );
         x_pred_padded.drain(0..tl_pad);
         x_pred_padded.truncate(original_len);

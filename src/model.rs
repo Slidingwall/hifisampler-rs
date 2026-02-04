@@ -1,12 +1,11 @@
 pub mod hnsep;
 pub mod hifigan;
-use std::sync::Mutex;
-use std::sync::OnceLock;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use once_cell::sync::OnceCell;
 use crate::consts::HIFI_CONFIG;
 use crate::model::{hifigan::HiFiGANLoader, hnsep::HNSEPLoader};
-pub static VOCODER: OnceLock<Arc<Mutex<HiFiGANLoader>>> = OnceLock::new();
-pub static REMOVER: OnceLock<Arc<Mutex<HNSEPLoader>>> = OnceLock::new();
+pub static VOCODER: OnceCell<Arc<Mutex<HiFiGANLoader>>> = OnceCell::new();
+pub static REMOVER: OnceCell<Arc<Mutex<HNSEPLoader>>> = OnceCell::new();
 pub fn initialize_models() {
     if !HIFI_CONFIG.vocoder_path.exists() {
         panic!("HiFiGAN model not found at: {}", HIFI_CONFIG.vocoder_path.display());
