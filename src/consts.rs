@@ -25,46 +25,46 @@ fn load_hifi_config() -> HifiConfig {
         Ok(ini) => ini,
         Err(_) => return HifiConfig::default(),
     };
-    let default_section: HashMap<String, String> = ini
+    let def_sec: HashMap<String, String> = ini
         .section(None::<String>)
         .map(|props| props.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
         .unwrap_or_default();
     HifiConfig {
-        vocoder_path: default_section
+        vocoder_path: def_sec
             .get("vocoder_path")
             .cloned()
             .map(PathBuf::from)
             .unwrap_or(PathBuf::from("./model/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx")),
-        hnsep_path: default_section
+        hnsep_path: def_sec
             .get("hnsep_path")
             .cloned()
             .map(PathBuf::from)
             .unwrap_or(PathBuf::from("./model/hnsep_model.onnx")),
-        wave_norm: default_section
+        wave_norm: def_sec
             .get("wave_norm")
             .and_then(|s| s.parse().ok())
             .unwrap_or(true),
-        trim_silence: default_section
+        trim_silence: def_sec
             .get("trim_silence")
             .and_then(|s| s.parse().ok())
             .unwrap_or(true),
-        loop_mode: default_section
+        loop_mode: def_sec
             .get("loop_mode")
             .and_then(|s| s.parse().ok())
             .unwrap_or(true),
-        silence_threshold: default_section
+        silence_threshold: def_sec
             .get("silence_threshold")
             .and_then(|s| s.parse().ok())
             .unwrap_or(-52.0),
-        peak_limit: default_section
+        peak_limit: def_sec
             .get("peak_limit")
             .and_then(|s| s.parse().ok())
             .unwrap_or(1.0),
-        fill: default_section
+        fill: def_sec
             .get("fill")
             .and_then(|s| s.parse().ok())
             .unwrap_or(6),
-        max_workers: default_section
+        max_workers: def_sec
             .get("max_workers")
             .and_then(|s| s.parse().ok())
             .unwrap_or(2),

@@ -8,6 +8,9 @@ use anyhow::Result;
 use tokio;
 use tracing_subscriber::{fmt, prelude::*};
 use crate::consts::HIFI_CONFIG;
+use mimalloc::MiMalloc;
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 fn init_logging() -> Result<()> {
     tracing_subscriber::registry()
         .with(tracing::level_filters::LevelFilter::INFO)

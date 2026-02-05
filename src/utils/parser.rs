@@ -23,26 +23,26 @@ fn to_int12_stream<S: AsRef<str>>(b64: S) -> Vec<i16> {
         })
         .collect()
 }
-pub fn pitch_string_to_midi(pitch_string: &str) -> Result<Vec<f64>> {
-    let mut result = Vec::new();
-    let parts: Vec<_> = pitch_string.split('#').collect();
+pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f64>> {
+    let mut res = Vec::new();
+    let parts: Vec<_> = string.split('#').collect();
     let mut idx = 0;
     while idx < parts.len() - 1 {
         let stream = to_int12_stream(parts[idx]);
-        result.extend(stream);
+        res.extend(stream);
         let rle = parts[idx+1].parse::<usize>()
             .map_err(|e| anyhow!("Invalid RLE '{}': {}", parts[idx+1], e))?;
         if rle > 0 {
-            let last = result.last().copied()
+            let last = res.last().copied()
                 .ok_or_else(|| anyhow!("Empty pitch stream for '{}'", parts[idx]))?;
-            result.extend(std::iter::repeat(last).take(rle));
+            res.extend(std::iter::repeat(last).take(rle));
         }
         idx += 2;
     }
     if idx < parts.len() {
-        result.extend(to_int12_stream(parts[idx]));
+        res.extend(to_int12_stream(parts[idx]));
     }
-    Ok(result.into_iter()
+    Ok(res.into_iter()
         .map(|x| x as f64 / 100.0)
         .chain(std::iter::once(0.0))
         .collect())
@@ -103,9 +103,9 @@ pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f64>>> {
 mod tests {
     use super::*;
     #[test]
-    fn test_pitch_string() {
+    fn test_string() {
         let test = "B7CPCVCVCTCQCNCICDB+B5B0BvBrBnBlBk#14#BjBF/++Y8k615d4p4f4l4y5G5f596e7B7l8H8n9D9Z9q9092919y9t9n9f9Y9Q9I9C898584858/9L9b9v+G+f+4/Q/m/5AIATAY#2#AWAUARAOALAHAFACABAA";
-        let pitchbend = pitch_string_to_midi(&test).unwrap();
+        let pitchbend = pitch_string_to_cents(&test).unwrap();
         pitchbend.iter().for_each(|p| println!("{}", p));
     }
     #[test]

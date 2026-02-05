@@ -2,9 +2,7 @@ pub mod post_process;
 use crate::consts::SAMPLE_RATE;
 use anyhow::{anyhow, Result};
 use hound::{SampleFormat, WavSpec, WavWriter};
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
+use rubato::{Resampler, SincFixedIn, WindowFunction, SincInterpolationParameters, SincInterpolationType};
 use std::{fs::File, path::{Path, PathBuf}};
 use symphonia::{
     core::{
@@ -15,12 +13,9 @@ use symphonia::{
     default::{get_codecs, get_probe},
 };
 const I16_MAX: f64 = i16::MAX as f64;
-fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
-    let ratio = out_fs as f64 / in_fs as f64;
-    if audio.is_empty() || in_fs == out_fs {
-        return Ok(audio.to_vec());
-    }
-    let mut resampled = Vec::with_capacity((audio.len() as f64 * ratio).ceil() as usize);
+fn resample_audio(audio: &[f64], in_sr: u32, out_sr: u32) -> Result<Vec<f64>> {
+    let ratio = out_sr as f64 / in_sr as f64;
+    let mut res = Vec::with_capacity((audio.len() as f64 * ratio).ceil() as usize);
     let mut resampler = SincFixedIn::<f64>::new(
         ratio,
         2.0,
@@ -35,31 +30,25 @@ fn resample_audio(audio: &[f64], in_fs: u32, out_fs: u32) -> Result<Vec<f64>> {
         1,
     )?;
     for chunk in audio.chunks(256) {
-        let input_chunk: Vec<f64> = chunk
-            .iter()
-            .copied()
-            .chain(std::iter::repeat(0.0))
-            .take(256)
-            .collect();
-        let binding = resampler.process(&[&input_chunk], None)?;
-        let output = binding.get(0).unwrap();
-        resampled.extend_from_slice(output);
+        let mut input = Vec::from(chunk);
+        input.resize(256, 0.0);
+        let proc_res = resampler.process(&[&input], None)?;
+        let output = proc_res.get(0).unwrap();
+        res.extend_from_slice(output);
     }
-    let binding=resampler.process(&[&[]], None)?;
-    let final_output = binding.get(0).unwrap();
-    resampled.extend_from_slice(final_output);
-    Ok(resampled)
+    let final_proc_res = resampler.process(&[&[]], None)?;
+    let final_output = final_proc_res.get(0).unwrap();
+    res.extend_from_slice(final_output);
+    Ok(res)
 }
 pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
     let mut path = PathBuf::from(path.as_ref());
     if !path.exists() {
         let common_extensions = ["wav", "flac", "ogg", "mp3", "aac"];
-        let found = common_extensions
-            .iter()
-            .find(|&&ext| {
-                path.set_extension(ext);
-                path.exists()
-            });
+        let found = common_extensions.iter().find(|&&ext| {
+            path.set_extension(ext);
+            path.exists()
+        });
         if found.is_none() {
             return Err(anyhow!(
                 "No supported audio file found (tried extensions: {:?})",
@@ -79,33 +68,25 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
         channels: track.codec_params.channels.unwrap(),
         rate: track.codec_params.sample_rate.unwrap(),
     };
+    let channels = spec.channels.count();
     let mut decoder = get_codecs()
         .make(&track.codec_params, &Default::default())?;
     let mut audio = Vec::with_capacity(409600);
-    let mut packet_buffer = SampleBuffer::<f64>::new(4096, spec);
+    let mut sample_buf = SampleBuffer::<f64>::new(4096, spec);
     let track_id = track.id;
-    let channels = spec.channels.count();
     while let Ok(packet) = probed.format.next_packet() {
         if packet.track_id() != track_id {
             continue;
         }
         if let Ok(decoded) = decoder.decode(&packet) {
-            packet_buffer.copy_interleaved_ref(decoded);
-            let samples = packet_buffer.samples();
+            sample_buf.copy_interleaved_ref(decoded);
+            let samples = sample_buf.samples();
             if channels == 1 {
                 audio.extend_from_slice(samples);
             } else {
-                audio.extend(
-                    samples
-                        .chunks(channels)
-                        .map(|frame| {
-                            let mut sum = 0.0;
-                            for &s in frame {
-                                sum += s;
-                            }
-                            sum / channels as f64
-                        }),
-                );
+                audio.extend(samples.chunks(channels).map(|frame| {
+                    frame.iter().sum::<f64>() / channels as f64
+                }));
             }
         }
     }
@@ -122,12 +103,12 @@ pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
             channels: 1,
             sample_rate: SAMPLE_RATE,
             bits_per_sample: 16,
-            sample_format: SampleFormat::Int,
+            sample_format: SampleFormat::Int
         },
     )?;
-    for &s in audio {
-        writer.write_sample((s * I16_MAX) as i16)?;
-    }
+    audio.iter()
+        .map(|&s| (s * I16_MAX) as i16)
+        .try_for_each(|sample| writer.write_sample(sample))?;
     writer.finalize()?;
     Ok(())
 }
@@ -148,9 +129,8 @@ mod tests {
             if path.exists() {
                 let audio = read_audio(path).expect("Read failed");
                 println!("Read time: {:.2?}", now.elapsed());
-                let write_now = Instant::now();
                 write_audio(&out_path, &audio).expect("Write failed");
-                println!("Write time: {:.2?}", write_now.elapsed());
+                println!("Write time: {:.2?}", now.elapsed());
             } else {
                 println!("File not found: {:?} (skipped)", path.as_os_str());
             }

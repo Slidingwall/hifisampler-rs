@@ -8,22 +8,18 @@ fn forward_backward_filter<F: Biquad<f64>>(
     filter: &mut F,
     repeats: usize,
 ) {
-    for _ in 0..repeats {
-        for sample in signal.iter_mut() {
-            *sample = filter.run(*sample);
-        }
-        filter.reset_state();
-        for sample in signal.iter_mut().rev() {
-            *sample = filter.run(*sample);
-        }
-        filter.reset_state();
-    }
+    (0..repeats).for_each(|_| {
+    signal.iter_mut().for_each(|sample| *sample = filter.run(*sample));
+    filter.reset_state();
+    signal.iter_mut().rev().for_each(|sample| *sample = filter.run(*sample));
+    filter.reset_state();
+});
 }
 #[inline]
-fn create_highpass_coeffs(sr_f64: f64, cutoff: f64) -> biquad::Coefficients<f64> {
+fn create_highpass_coeffs(sr: f64, cutoff: f64) -> biquad::Coefficients<f64> {
     Coefficients::<f64>::from_params(
         biquad::Type::HighPass,
-        sr_f64.hz(),
+        sr.hz(),
         cutoff.hz(),
         Q_HIGHPASS,
     )
@@ -47,11 +43,11 @@ fn highpass(
         .collect::<Vec<f64>>();
     (high, low)
 }
-fn square_lfo(num_samples: usize, sr: f64, freq: f64) -> Vec<f64> {
-    let mut lfo = Vec::with_capacity(num_samples);
-    let samples_per_period = (sr * (1.0 / freq)) as usize;
-    for n in 0..num_samples {
-        if (n as f64 / samples_per_period as f64).fract() < 0.5 {
+fn square_lfo(num: usize, sr: f64, freq: f64) -> Vec<f64> {
+    let mut lfo = Vec::with_capacity(num);
+    let samples = (sr / freq) as usize;
+    for n in 0..num {
+        if (n % samples) < (samples / 2) {
             lfo.push(1.0);
         } else {
             lfo.push(-1.0);
@@ -62,11 +58,11 @@ fn square_lfo(num_samples: usize, sr: f64, freq: f64) -> Vec<f64> {
 fn linear_interp(idx: &[f64], x: &[f64]) -> Vec<f64> {
     let mut output = Vec::with_capacity(idx.len());
     for &i in idx {
-        let i_floor = i.floor() as usize;
-        let val = if i_floor + 1 >= x.len() {
+        let floor_idx = i.floor() as usize;
+        let val = if floor_idx >= x.len() - 1 {
             x[x.len() - 1]
         } else {
-            lerp(x[i_floor], x[i_floor + 1], i - (i_floor as f64))
+            lerp(x[floor_idx], x[floor_idx + 1], i.fract())
         };
         output.push(val);
     }
@@ -87,7 +83,7 @@ fn apply_pitch_modulation(
     let mut buf = lfo.iter()
         .map(|&l| 2.0f64.powf(l * (strength * VIBRATO_FACTOR)))
         .collect::<Vec<f64>>(); 
-    let mean_ratio = buf.iter().sum::<f64>() * (1.0 / band_len as f64);
+    let mean_ratio = buf.iter().sum::<f64>() / band_len as f64;
     let ratio_0 = buf[0];
     let mut cumulative = 0.0;
     for (i, val) in buf.iter_mut().enumerate() {
@@ -105,24 +101,24 @@ fn apply_pitch_modulation(
 }
 pub fn growl(
     audio: &mut Vec<f64>,
-    sample_rate: f64,
-    frequency: f64,
+    sr: f64,
+    freq: f64,
     strength: f64,
 ) {
-    let original_len = audio.len();
-    if original_len == 0 {
+    let orig_len = audio.len();
+    if orig_len == 0 {
         return;
     }
-    let complement_original = std::mem::take(audio);
-    let (high, mut complement) = highpass(&complement_original, sample_rate, 400.0);
-    let modulated_band = apply_pitch_modulation(
+    let orig_audio = std::mem::take(audio);
+    let (high, mut complement) = highpass(&orig_audio, sr, 400.0);
+    let mod_band = apply_pitch_modulation(
         &high,
-        sample_rate,
-        &square_lfo(original_len, sample_rate, frequency),
+        sr,
+        &square_lfo(orig_len, sr, freq),
         strength,
     );
     complement.iter_mut()
-        .zip(modulated_band.iter())
+        .zip(mod_band.iter())
         .for_each(|(c, m)| *c += m);
     *audio = complement;
 }

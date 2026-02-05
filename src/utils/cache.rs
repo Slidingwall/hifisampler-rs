@@ -1,14 +1,13 @@
-use std::fs;
-use std::fs::File;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 use std::collections::HashMap;
+use std::fs::{create_dir_all, rename, File};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use ndarray::{Array0, Array1, Array2};
 use ndarray_npy::{read_npy, write_npy, NpzReader, NpzWriter};
-use tracing::{info, warn};
 use once_cell::sync::Lazy;
 use fs2::FileExt;
+use tracing::{info, warn};
 macro_rules! defer {
     ($($stmt:stmt);* $(;)?) => {
         let _defer = {
@@ -41,7 +40,7 @@ impl CrossProcessLockManager {
             return file.clone();
         }
         if let Some(parent) = lock_path.parent() {
-            fs::create_dir_all(parent).unwrap();
+            create_dir_all(parent).unwrap();
         }
         let file = File::options()
             .read(true)
@@ -84,17 +83,16 @@ pub struct CacheManager {
 impl CacheManager {
     fn validate_file_path(&self, path: &Path) {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
+            create_dir_all(parent).unwrap();
         }
     }
-    pub fn load_features_cache(&self, path: &Path, force_generate: bool) -> Option<Features> {
-        if force_generate || !path.exists() {
+    pub fn load_features_cache(&self, path: &Path, force_gen: bool) -> Option<Features> {
+        if force_gen || !path.exists() {
             return None;
         }
-        self.validate_file_path(path);
         self.lock_manager.acquire_shared(path);
         defer! {
-            let _ = self.lock_manager.release(path);
+            self.lock_manager.release(path);
         }
         let file = match File::open(path) {
             Ok(f) => f,
@@ -115,37 +113,36 @@ impl CacheManager {
         info!("Cache loaded: {}", path.display());
         Some(Features { mel_origin, scale: scale_arr.into_scalar() })
     }
-    pub fn load_hnsep_cache(&self, path: &Path, force_generate: bool) -> Option<Vec<f64>> {
-        if force_generate || !path.exists() {
+    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Vec<f64>> {
+        if force_gen || !path.exists() {
             return None;
         }
-        self.validate_file_path(path);
         self.lock_manager.acquire_shared(path);
         defer! {
-            let _ = self.lock_manager.release(path);
+            self.lock_manager.release(path);
         }
-        let arr1_data = read_npy::<_, Array1<f64>>(path).unwrap();
-        let vec_data = arr1_data.to_vec();
-        info!("Hnsep cache loaded: {} (length: {})", path.display(), vec_data.len());
-        Some(vec_data)
+        let hnsep_arr = read_npy::<_, Array1<f64>>(path).unwrap();
+        let hnsep_vec = hnsep_arr.to_vec();
+        info!("Hnsep cache loaded: {} (length: {})", path.display(), hnsep_vec.len());
+        Some(hnsep_vec)
     }
     pub fn save_features_cache(&self, path: &Path, features: &Features) -> Option<Features> {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! {
-            let _ = self.lock_manager.release(path);
+            self.lock_manager.release(path);
         }
         if path.exists() {
             info!("Cache exists, reuse: {}", path.display());
             return self.load_features_cache(path, false);
         }
-        let temp_path = path.with_extension("tmp");
-        let file = File::create(&temp_path).unwrap();
+        let tmp_path = path.with_extension("tmp");
+        let file = File::create(&tmp_path).unwrap();
         let mut writer = NpzWriter::new(file);
         writer.add_array("mel_origin", &features.mel_origin).unwrap();
         writer.add_array("scale", &Array0::from_elem((), features.scale)).unwrap();
         writer.finish().unwrap();
-        fs::rename(&temp_path, path).unwrap();
+        rename(&tmp_path, path).unwrap();
         info!("Features saved to: {}", path.display());
         Some(features.clone())
     }
@@ -153,18 +150,18 @@ impl CacheManager {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! {
-            let _ = self.lock_manager.release(path);
+            self.lock_manager.release(path);
         }
         if path.exists() {
             info!("Hnsep cache exists, reuse: {}", path.display());
             return self.load_hnsep_cache(path, false);
         }
-        let temp_path = path.with_extension("tmp");
-        let arr1_data = Array1::from_vec(data);
-        write_npy(&temp_path, &arr1_data).unwrap();
-        fs::rename(&temp_path, path).unwrap();
-        info!("Hnsep saved to: {} (length: {})", path.display(), arr1_data.len());
-        Some(arr1_data.to_vec())
+        let tmp_path = path.with_extension("tmp");
+        let hnsep_arr = Array1::from_vec(data);
+        write_npy(&tmp_path, &hnsep_arr).unwrap();
+        rename(&tmp_path, path).unwrap();
+        info!("Hnsep saved to: {} (length: {})", path.display(), hnsep_arr.len());
+        Some(hnsep_arr.to_vec())
     }
 }
 pub static CACHE_MANAGER: Lazy<CacheManager> = Lazy::new(CacheManager::default);

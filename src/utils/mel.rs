@@ -6,24 +6,20 @@ use ndarray::{Array2, ArrayView1, Axis, parallel::prelude::*, s};
 const TARGET_BINS: usize = FFT_SIZE / 2 + 1;
 pub fn mel(wave: &mut Vec<f64>, key_shift: f64, speed: f64) -> Array2<f64> {
     let fft_size = (FFT_SIZE as f64 * 2f64.powf(key_shift / 12.0)).round() as usize;
-    let hop_length = (ORIGIN_HOP_SIZE as f64 * speed).round() as usize;
-    let scale_factor = FFT_SIZE as f64 / fft_size as f64;
-    reflect_pad_1d(wave, (fft_size - hop_length) / 2, (fft_size - hop_length + 1) / 2);
-    let complex_spec = stft_core(&wave, fft_size, hop_length);
-    let n_frames = complex_spec.ncols();
-    let mut spec = Array2::zeros((complex_spec.nrows(), n_frames));
-    par_azip!((spec_elem in &mut spec, complex_elem in &complex_spec) {
-        *spec_elem = complex_elem.norm();
+    let hop_len = (ORIGIN_HOP_SIZE as f64 * speed).round() as usize;
+    let scale = FFT_SIZE as f64 / fft_size as f64;
+    reflect_pad_1d(wave, (fft_size - hop_len) / 2, (fft_size - hop_len + 1) / 2);
+    let comp_spec = stft_core(&wave, fft_size, hop_len);
+    let n_frames = comp_spec.ncols();
+    let mut spec = Array2::zeros((comp_spec.nrows(), n_frames));
+    par_azip!((spec_elem in &mut spec, comp_elem in &comp_spec) {
+        *spec_elem = comp_elem.norm();
     });
-    let processed_spec = if key_shift != 0. {
+    let proc_spec = if key_shift != 0. {
         let mut target = Array2::zeros((TARGET_BINS, n_frames));
-        let source_view = if complex_spec.nrows() < TARGET_BINS {
-            spec.view()
-        } else {
-            spec.slice(s![..TARGET_BINS, ..])
-        };
-        target.slice_mut(s![..source_view.nrows(), ..]).assign(&source_view);
-        target.par_mapv_inplace(|x| x * scale_factor);
+        let src_view = spec.slice(s![..TARGET_BINS, ..]);
+        target.slice_mut(s![..src_view.nrows(), ..]).assign(&src_view);
+        target.par_mapv_inplace(|x| x * scale);
         target
     } else {
         spec
@@ -33,8 +29,8 @@ pub fn mel(wave: &mut Vec<f64>, key_shift: f64, speed: f64) -> Array2<f64> {
         for (frame_idx, mel_val) in mel_row.iter_mut().enumerate() {
             let mut sum = 0.0;
             for &(freq_idx, weight) in *nonzeros {
-                if freq_idx < processed_spec.nrows() {
-                    sum += processed_spec[(freq_idx, frame_idx)] * weight;
+                if freq_idx < proc_spec.nrows() {
+                    sum += proc_spec[(freq_idx, frame_idx)] * weight;
                 }
             }
             *mel_val = sum;

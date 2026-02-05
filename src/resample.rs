@@ -1,13 +1,14 @@
 use anyhow::Result;
 use ndarray::{Array2, Axis, concatenate, s};
-use std::{ collections::HashMap, path::PathBuf };
+use std::{collections::HashMap, path::PathBuf};
 use tracing::info;
 use crate::{
-    audio::{ post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio },
+    audio::{post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio},
     consts::{SAMPLE_RATE, ORIGIN_HOP_SIZE, HOP_SIZE, FEATURE_EXT, HIFI_CONFIG},
     model::{get_remover, get_vocoder},
     utils::{
-        cache::{CACHE_MANAGER, Features}, dynamic_range_compression, growl::growl, interp::Akima, interp1d, midi_to_hz, mel::mel, parser::{flag_parser, pitch_parser, pitch_string_to_midi, tempo_parser}, reflect_pad_2d
+        cache::{CACHE_MANAGER, Features}, dynamic_range_compression, growl::growl, interp::Akima, interp1d, 
+        midi_to_hz, mel::mel, parser::{flag_parser, pitch_parser, pitch_string_to_cents, tempo_parser}, reflect_pad_2d
     },
 };
 const SR_F64: f64 = SAMPLE_RATE as f64;
@@ -45,7 +46,7 @@ impl Resampler {
             volume: args[9].parse::<f64>()? / 100.,
             modulation: args[10].parse::<f64>()? / 100.,
             tempo: tempo_parser(&args[11])? * 96.,
-            pitchbend: pitch_string_to_midi(&args[12])?,
+            pitchbend: pitch_string_to_cents(&args[12])?,
         }.render()
     }
     fn render(&mut self) -> Result<()> {
@@ -56,16 +57,16 @@ impl Resampler {
         [("Hb", 100.), ("Hv", 100.), ("Ht", 0.), ("g", 0.)]
             .iter()
             .for_each(|(k, v)| { self.flags.entry(k.to_string()).or_insert(Some(*v)); });
-        let flag_suffix = self.flags.iter()
+        let flag_suf = self.flags.iter()
             .filter(|(k, _)| ["Hb", "Hv", "Ht", "g"].contains(&k.as_str()))
             .map(|(k, v)| format!("{}{}", k, v.as_ref().unwrap())) 
             .collect::<Vec<_>>()
             .join("_");
         let stem = self.in_file.file_stem().unwrap().to_str().unwrap();
-        let cache_name = format!("{}_{}{}", stem, flag_suffix, FEATURE_EXT);
+        let cache_name = format!("{}_{}{}", stem, flag_suf, FEATURE_EXT);
         let features_path = self.in_file.with_file_name(cache_name);
-        let force_generate = self.flags.contains_key("G");
-        if let Some(features) = CACHE_MANAGER.load_features_cache(&features_path, force_generate) {
+        let force_gen = self.flags.contains_key("G");
+        if let Some(features) = CACHE_MANAGER.load_features_cache(&features_path, force_gen) {
             return Ok(features);
         }
         info!("Generating features (cache not found or forced): {}", features_path.display());
@@ -74,19 +75,19 @@ impl Resampler {
         Ok(features)
     }
     fn generate_features(&self) -> Result<Features> {
-        let breath = self.flags.get("Hb").and_then(|o| o.as_ref()).copied().unwrap();
+        let bre = self.flags.get("Hb").and_then(|o| o.as_ref()).copied().unwrap();
         let voicing = self.flags.get("Hv").and_then(|o| o.as_ref()).copied().unwrap();
         let tension = self.flags.get("Ht").and_then(|o| o.as_ref()).copied().unwrap();
-        info!("Breath: {}, Voicing: {}, Tension: {}", breath, voicing, tension);
+        info!("Breath: {}, Voicing: {}, Tension: {}", bre, voicing, tension);
         let mut wave = read_audio(&self.in_file)?;
         info!("Wave length: {}", wave.len());
-        if tension != 0. || breath != voicing {
+        if tension != 0. || bre != voicing {
             info!("Applying HNSEP separation for breath/voicing/tension adjustment");
             let stem = self.in_file.file_stem().unwrap().to_str().unwrap();
             let hnsep_path = self.in_file.with_file_name(format!("{}_hnsep", stem));
-            let force_generate = self.flags.contains_key("G");
-            let seg_output = if !force_generate && hnsep_path.exists() {
-                CACHE_MANAGER.load_hnsep_cache(&hnsep_path, force_generate).unwrap()
+            let force_gen = self.flags.contains_key("G");
+            let seg_output = if !force_gen && hnsep_path.exists() {
+                CACHE_MANAGER.load_hnsep_cache(&hnsep_path, force_gen).unwrap()
             } else {
                 info!("Generating HNSEP features: {}", hnsep_path.display());
                 let remover_arc = get_remover();
@@ -94,7 +95,7 @@ impl Resampler {
                 let seg = remover.run(&wave);
                 CACHE_MANAGER.save_hnsep_cache(&hnsep_path, seg).unwrap()
             };
-            let (breath_scale, voicing_scale) = (breath.clamp(0., 500.) / 100., voicing.clamp(0., 150.) / 100.);
+            let (bre_scale, voicing_scale) = (bre.clamp(0., 500.) / 100., voicing.clamp(0., 150.) / 100.);
             if tension != 0. {
                 let mut voicing_seg = seg_output.iter()
                     .map(|&s| voicing_scale * s)
@@ -104,19 +105,19 @@ impl Resampler {
                     .zip(seg_output.iter())
                     .zip(voicing_seg.iter())
                     .for_each(|((w, &s), &em)| {
-                        *w = breath_scale * (*w - s) + em;
+                        *w = bre_scale * (*w - s) + em;
                     });
             } else {
                 wave.iter_mut()
                     .zip(seg_output.iter())
                     .for_each(|(w, &s)| {
-                        *w = breath_scale * (*w - s) + voicing_scale * s;
+                        *w = bre_scale * (*w - s) + voicing_scale * s;
                     });
             };
-        } else if breath != 100. || voicing != 100. {
-            info!("Applying simple volume scaling: {}", breath / 100.);
-            let breath_scale = breath.clamp(0., 500.) / 100.; 
-            wave.iter_mut().for_each(|x| *x *= breath_scale);
+        } else if bre != 100. || voicing != 100. {
+            info!("Applying simple volume scaling: {}", bre / 100.);
+            let bre_scale = bre.clamp(0., 500.) / 100.; 
+            wave.iter_mut().for_each(|x| *x *= bre_scale);
         }
         let wave_max = wave.iter()
             .map(|x| x.abs())
@@ -148,71 +149,71 @@ impl Resampler {
             "Modulation: {:.1}, Scale: {:.1}, Mel shape: {:?}",
             self.modulation, features.scale, mel_origin.dim()
         );
-        let initial_mel_cols = mel_origin.ncols();
-        let mut t_area_origin = Vec::with_capacity(initial_mel_cols);
-        for i in 0..initial_mel_cols {
+        let mel_cols = mel_origin.ncols();
+        let mut t_origin = Vec::with_capacity(mel_cols);
+        for i in 0..mel_cols {
             let val = i as f64 * THOP_ORIGIN + THOP_ORIGIN_HALF;
-            t_area_origin.push(val);
+            t_origin.push(val);
         }
-        let mut total_time = t_area_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
+        let mut t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
         let vel = (1.0 - self.velocity).exp2();
         let start = self.offset;
         let cutoff = self.cutoff;
-        let end = if cutoff < 0.0 { start - cutoff } else { total_time - cutoff };
+        let end = if cutoff < 0.0 { start - cutoff } else { t_total - cutoff };
         let con = start + self.consonant;
         let length_req = self.length;
-        let mut stretch_length = end - con;
+        let mut stretch_len = end - con;
         info!(
-            "Time params: start={:.4}, end={:.4}, con={:.4}, stretch_length={:.4}, length_req={:.4}",
-            start, end, con, stretch_length, length_req
+            "Time params: start={:.4}, end={:.4}, con={:.4}, stretch_len={:.4}, length_req={:.4}",
+            start, end, con, stretch_len, length_req
         );
         if HIFI_CONFIG.loop_mode || self.flags.contains_key("He") {
             info!("Enabling loop mode");
-            let start_idx = (((con + THOP_ORIGIN_HALF) / THOP_ORIGIN).floor() as usize).clamp(0, initial_mel_cols);
-            let end_idx = (((end + THOP_ORIGIN_HALF) / THOP_ORIGIN).floor() as usize).clamp(start_idx, initial_mel_cols);
+            let start_idx = (((con + THOP_ORIGIN_HALF) / THOP_ORIGIN).floor() as usize).clamp(0, mel_cols);
+            let end_idx = (((end + THOP_ORIGIN_HALF) / THOP_ORIGIN).floor() as usize).clamp(start_idx, mel_cols);
             let mel_loop = mel_origin.slice(s![.., start_idx..end_idx]);
             let pad_size = (length_req / THOP_ORIGIN).floor() as usize + 1;
             let padded_mel = reflect_pad_2d(mel_loop, pad_size);
             *mel_origin = concatenate![Axis(1), mel_origin.slice(s![.., 0..start_idx]), padded_mel];
-            stretch_length = pad_size as f64 * THOP_ORIGIN;
-            t_area_origin = Vec::with_capacity(mel_origin.ncols()); 
+            stretch_len = pad_size as f64 * THOP_ORIGIN;
+            t_origin = Vec::with_capacity(mel_origin.ncols()); 
             for i in 0..mel_origin.ncols() {
                 let val = i as f64 * THOP_ORIGIN + THOP_ORIGIN_HALF;
-                t_area_origin.push(val);
+                t_origin.push(val);
             }
-            total_time = t_area_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
-            info!("Looped mel shape: {:?}, new total time: {:.4}", mel_origin.dim(), total_time);
+            t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
+            info!("Looped mel shape: {:?}, new total time: {:.4}", mel_origin.dim(), t_total);
         }
-        let scaling_ratio = if stretch_length < length_req {
-            info!("Stretching (ratio: {:.4})", length_req / stretch_length);
-            length_req / stretch_length
+        let scal_ratio = if stretch_len < length_req {
+            info!("Stretching (ratio: {:.4})", length_req / stretch_len);
+            length_req / stretch_len
         } else {
             info!("No stretching needed (ratio: 1.0)");
             1.0
         };
         let stretch = |t: f64| -> f64 {
-            if t < vel * con { t / vel } else { con + (t - vel * con) / scaling_ratio }
+            if t < vel * con { t / vel } else { con + (t - vel * con) / scal_ratio }
         };
-        let stretched_n_frames = ((con * vel + (total_time - con) * scaling_ratio) / THOP)
+        let stretched_frames = ((con * vel + (t_total - con) * scal_ratio) / THOP)
             .floor() as usize + 1;
-        let mut stretched_t_mel = Vec::with_capacity(stretched_n_frames);
-        for i in 0..stretched_n_frames {
+        let mut stretched_mel = Vec::with_capacity(stretched_frames);
+        for i in 0..stretched_frames {
             let val = i as f64 * THOP + THOP_HALF;
-            stretched_t_mel.push(val);
+            stretched_mel.push(val);
         }
         let slice_start = (((start * vel + THOP_HALF) / THOP).floor() as usize)
             .saturating_sub(HIFI_CONFIG.fill);
-        let slice_end = stretched_n_frames.saturating_sub(
-            stretched_n_frames.saturating_sub(
+        let slice_end = stretched_frames.saturating_sub(
+            stretched_frames.saturating_sub(
                 ((length_req + con * vel + THOP_HALF) / THOP).floor() as usize
             ).saturating_sub(HIFI_CONFIG.fill)
         );
-        stretched_t_mel = stretched_t_mel[slice_start..slice_end].to_vec();
-        info!("Stretched time axis length: {}", stretched_t_mel.len());
-        stretched_t_mel.iter_mut().for_each(|t| {
-            *t = stretch(*t).clamp(0.0, t_area_origin.last().copied().unwrap());
+        stretched_mel = stretched_mel[slice_start..slice_end].to_vec();
+        info!("Stretched time axis length: {}", stretched_mel.len());
+        stretched_mel.iter_mut().for_each(|t| {
+            *t = stretch(*t).clamp(0.0, t_origin.last().copied().unwrap());
         });
-        let mel_render = interp1d(&t_area_origin, &mel_origin, &stretched_t_mel);
+        let mel_render = interp1d(&t_origin, &mel_origin, &stretched_mel);
         info!("Render mel shape: {:?}, Processing pitch...", mel_render.dim());
         let mut pitch_base = Vec::with_capacity(self.pitchbend.len());
         for &pb in &self.pitchbend {

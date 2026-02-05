@@ -1,15 +1,5 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
-use std::{
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{Arc, atomic::{AtomicBool, Ordering}},
-};
+use axum::{ extract::State, http::StatusCode, response::IntoResponse, routing::get, Router };
+use std::{ net::SocketAddr, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}} };
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
 use crate::resample::Resampler;

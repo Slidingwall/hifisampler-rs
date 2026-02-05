@@ -1,8 +1,5 @@
 use std::path::PathBuf;
-use ort::{
-    session::{Session, builder::GraphOptimizationLevel},
-    value::Value,
-};
+use ort::{ session::{Session, builder::GraphOptimizationLevel}, value::Value };
 use ndarray::{Array2, Array4, parallel::prelude::*};
 use oxifft::Complex;
 use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::stft::*};
@@ -21,16 +18,15 @@ impl HNSEPLoader {
         }
     }
     pub fn run(&mut self, wave: &[f64]) -> Vec<f64> {
-        let original_len = wave.len();
-        let tl_pad = ((SEG_LENGTH * (((original_len + HOP_SIZE - 1) / SEG_LENGTH + 1) - 1) 
-            - (original_len + HOP_SIZE)) / 2 / HOP_SIZE) * HOP_SIZE;
-        let tr_pad = SEG_LENGTH * (((original_len + HOP_SIZE - 1) / SEG_LENGTH + 1)) 
-            - (original_len + HOP_SIZE) - tl_pad;
-        let mut x_padded = Vec::with_capacity(tl_pad + original_len + tr_pad);
-        x_padded.extend(std::iter::repeat(0.0).take(tl_pad));
-        x_padded.extend_from_slice(wave);
-        x_padded.extend(std::iter::repeat(0.0).take(tr_pad));
-        let spec = stft_core(&x_padded, FFT_SIZE, HOP_SIZE);
+        let orig_len = wave.len();
+        let total_pad = SEG_LENGTH * (((orig_len + HOP_SIZE - 1) / SEG_LENGTH) + 1) - (orig_len + HOP_SIZE); 
+        let left = (total_pad / 2 / HOP_SIZE) * HOP_SIZE; 
+        let right = total_pad - left;
+        let mut x_pad = Vec::with_capacity(orig_len + total_pad);
+        x_pad.extend(std::iter::repeat(0.0).take(left));
+        x_pad.extend_from_slice(wave);
+        x_pad.extend(std::iter::repeat(0.0).take(right));
+        let spec = stft_core(&x_pad, FFT_SIZE, HOP_SIZE);
         let t_spec = spec.ncols();
         let (real, imag): (Vec<f32>, Vec<f32>) = spec
             .par_iter() 
@@ -47,13 +43,11 @@ impl HNSEPLoader {
                     1 => imag[f + t * OUTPUT_BIN],
                     _ => 0.0,
                 };
-            } else {
-                *val = 0.0;
             }
         });
         let input_value = Value::from_array(
             (
-                vec![1, 2, OUTPUT_BIN as i64, target_t_spec as i64],
+                [1, 2, OUTPUT_BIN as i64, target_t_spec as i64],
                 arr4.into_raw_vec_and_offset().0
             ),
         ).unwrap();
@@ -72,14 +66,14 @@ impl HNSEPLoader {
                 s_val.re * im + s_val.im * re
             );
         });
-        let mut x_pred_padded = istft_core(
+        let mut x_pred_pad = istft_core(
             &spec_corrected,
             (t_spec - 1) * HOP_SIZE + FFT_SIZE,
             FFT_SIZE,
             HOP_SIZE,
         );
-        x_pred_padded.drain(0..tl_pad);
-        x_pred_padded.truncate(original_len);
-        x_pred_padded
+        x_pred_pad.drain(0..left);
+        x_pred_pad.truncate(orig_len);
+        x_pred_pad
     }
 }
