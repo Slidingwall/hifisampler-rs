@@ -4,10 +4,10 @@ use crate::{
 };
 use ndarray::{Array2, ArrayView1, Axis, azip, s};
 const TARGET_BINS: usize = FFT_SIZE / 2 + 1;
-pub fn mel(wave: &mut Vec<f64>, key_shift: f64, speed: f64) -> Array2<f64> {
-    let fft_size = (FFT_SIZE as f64 * 2f64.powf(key_shift / 12.0)).round() as usize;
-    let hop_len = (ORIGIN_HOP_SIZE as f64 * speed).round() as usize;
-    let scale = FFT_SIZE as f64 / fft_size as f64;
+pub fn mel(wave: &mut Vec<f32>, key_shift: f32, speed: f32) -> Array2<f32> {
+    let fft_size = (FFT_SIZE as f32 * 2f32.powf(key_shift / 12.0)).round() as usize;
+    let hop_len = (ORIGIN_HOP_SIZE as f32 * speed).round() as usize;
+    let scale = FFT_SIZE as f32 / fft_size as f32;
     reflect_pad_1d(wave, (fft_size - hop_len) / 2, (fft_size - hop_len + 1) / 2);
     let comp_spec = stft_core(&wave, fft_size, hop_len);
     let n_frames = comp_spec.ncols();

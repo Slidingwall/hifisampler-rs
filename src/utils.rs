@@ -6,20 +6,20 @@ pub mod growl;
 pub mod mel;
 mod mel_basis;
 use ndarray::{Array2, ArrayView2, Axis, azip, s};
-use std::{cmp::Ordering, f64::EPSILON};
+use std::{cmp::Ordering, f32::EPSILON};
 #[inline(always)]
-pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + t * (b - a)
 }
 #[inline(always)]
-pub fn midi_to_hz(x: f64) -> f64 {
+pub fn midi_to_hz(x: f32) -> f32 {
     440. * (x / 12. - 5.75).exp2()
 }
 #[inline(always)]
-pub fn dynamic_range_compression(s: &mut Array2<f64>) {
+pub fn dynamic_range_compression(s: &mut Array2<f32>) {
     s.mapv_inplace(|x| x.max(1e-9).ln());
 }
-pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
+pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
     let (n_r, n_xi) = (y.nrows(), xi.len());
     let mut res = Array2::zeros((n_r, n_xi));
     let (y_col0, y_col_e) = (y.column(0), y.column(x.len() - 1));
@@ -45,7 +45,7 @@ pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
     });
     res
 }
-pub fn reflect_pad_2d(arr: ArrayView2<f64>, pad: usize) -> Array2<f64> {
+pub fn reflect_pad_2d(arr: ArrayView2<f32>, pad: usize) -> Array2<f32> {
     let (n_rows, n_cols) = arr.dim(); 
     let mut pad_arr = Array2::zeros((n_rows, n_cols + pad)); 
     azip!((
@@ -64,7 +64,7 @@ pub fn reflect_pad_2d(arr: ArrayView2<f64>, pad: usize) -> Array2<f64> {
         });
     pad_arr
 }
-pub fn reflect_pad_1d(s: &mut Vec<f64>, left: usize, right: usize) {
+pub fn reflect_pad_1d(s: &mut Vec<f32>, left: usize, right: usize) {
     let len = s.len();
     s.reserve(left + right);
     s.resize(left + len + right, 0.0);
@@ -80,13 +80,13 @@ pub fn reflect_pad_1d(s: &mut Vec<f64>, left: usize, right: usize) {
 }
 #[cfg(test)]
 #[inline]
-pub fn linspace(start: f64, end: f64, n: usize) -> Vec<f64> {
+pub fn linspace(start: f32, end: f32, n: usize) -> Vec<f32> {
     match n {
         0 => Vec::new(),
         1 => vec![start],
         _ => {
-            let step = (end - start) / (n - 1) as f64;
-            (0..n).map(|i| start + step * i as f64).collect()
+            let step = (end - start) / (n - 1) as f32;
+            (0..n).map(|i| start + step * i as f32).collect()
         }
     }
 }

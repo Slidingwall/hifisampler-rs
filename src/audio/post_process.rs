@@ -5,7 +5,7 @@ use crate::{
     consts::{FFT_SIZE, HOP_SIZE, HIFI_CONFIG, SAMPLE_RATE},
     utils::{stft::{stft_core, istft_core}, reflect_pad_1d}, 
 };
-pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
+pub fn pre_emphasis_base_tension(wave: &mut Vec<f32>, b: f32) {
     let orig_len = wave.len();
     let orig_max = wave.iter()
         .map(|x| x.abs())
@@ -26,7 +26,7 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
     spec_amp.axis_iter_mut(Axis(0))
         .enumerate()
         .for_each(|(j, mut bin)| {
-            let filter = (b * (1.0 - (SAMPLE_RATE as f64 * j as f64) / (FFT_SIZE / 1500 + 3000) as f64)).clamp(-2.0, 2.0);
+            let filter = (b * (1.0 - (SAMPLE_RATE as f32 * j as f32) / (FFT_SIZE / 1500 + 3000) as f32)).clamp(-2.0, 2.0);
             bin.iter_mut().for_each(|amp_db| *amp_db += filter);
         });
     let mut comp_spec_istft = Array2::from_elem((FFT_SIZE / 2 + 1, comp_spec.ncols()), Complex::zero());
@@ -45,39 +45,39 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
         .zip(filtered_wave.drain(0..orig_len)) 
         .for_each(|(w, fw)| *w = fw * gain);
 }
-fn rms_db(audio: &[f64]) -> f64 {
-    let sum_sq: f64 = audio.iter()
+fn rms_db(audio: &[f32]) -> f32 {
+    let sum_sq: f32 = audio.iter()
         .map(|&x| x * x)
         .sum();
-    let rms = (sum_sq / audio.len() as f64).sqrt();
+    let rms = (sum_sq / audio.len() as f32).sqrt();
     if rms < 1e-10 {
-        f64::NEG_INFINITY
+        f32::NEG_INFINITY
     } else {
         20.0 * rms.log10()
     }
 }
-fn linear_fade(length: usize, fade_in: bool, sample_rate: f64) -> Vec<f64> {
+fn linear_fade(length: usize, fade_in: bool, sample_rate: f32) -> Vec<f32> {
     let fade_len = ((0.2 * sample_rate) as usize).min(length / 4);
     let mut fade = Vec::with_capacity(length); 
     if fade_in {
         fade.extend(std::iter::repeat(1.0).take(length));
         for i in 0..fade_len {
-            let val = (i as f64) / ((fade_len - 1).max(1)) as f64;
+            let val = (i as f32) / ((fade_len - 1).max(1)) as f32;
             fade[i] = val;
         }
     } else {
         fade.extend(std::iter::repeat(1.0).take(length - fade_len));
         for i in 0..fade_len {
-            let val = (i as f64) / ((fade_len - 1).max(1)) as f64;
+            let val = (i as f32) / ((fade_len - 1).max(1)) as f32;
             fade.push(val);
         }
     }
     fade
 }
 pub fn loudness_norm(
-    wave: &mut Vec<f64>,
-    sample_rate: f64,
-    target: f64,
+    wave: &mut Vec<f32>,
+    sample_rate: f32,
+    target: f32,
     norm_strength: u8,
 ) {
     let orig_len = wave.len();
@@ -124,8 +124,8 @@ pub fn loudness_norm(
             .iter()
             .map(|&x| x as f32)
     );
-    let measure = gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs() as f64;
-    let gain = 10.0f64.powf((target - measure) * norm_strength as f64 * 0.0005);
+    let measure = gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs() as f32;
+    let gain = 10.0f32.powf((target - measure) * norm_strength as f32 * 0.0005);
     wave[val_start..val_end]
         .iter_mut()
         .for_each(|x| *x *= gain);

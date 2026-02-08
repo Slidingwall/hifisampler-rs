@@ -1,10 +1,10 @@
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz};
 use crate::utils::lerp;
-const VIBRATO_FACTOR: f64 = 1.0 / 12.0;
-const HP_CUTOFF_HZ: f64 = 20.0;
-const Q_HIGHPASS: f64 = 0.7071067811865476;
-fn forward_backward_filter<F: Biquad<f64>>(
-    signal: &mut [f64],
+const VIBRATO_FACTOR: f32 = 1.0 / 12.0;
+const HP_CUTOFF_HZ: f32 = 20.0;
+const Q_HIGHPASS: f32 = 0.7071067811865476;
+fn forward_backward_filter<F: Biquad<f32>>(
+    signal: &mut [f32],
     filter: &mut F,
     repeats: usize,
 ) {
@@ -16,8 +16,8 @@ fn forward_backward_filter<F: Biquad<f64>>(
 });
 }
 #[inline]
-fn create_highpass_coeffs(sr: f64, cutoff: f64) -> biquad::Coefficients<f64> {
-    Coefficients::<f64>::from_params(
+fn create_highpass_coeffs(sr: f32, cutoff: f32) -> biquad::Coefficients<f32> {
+    Coefficients::<f32>::from_params(
         biquad::Type::HighPass,
         sr.hz(),
         cutoff.hz(),
@@ -25,25 +25,25 @@ fn create_highpass_coeffs(sr: f64, cutoff: f64) -> biquad::Coefficients<f64> {
     )
     .expect("Failed to create highpass coefficients: invalid sample rate or cutoff frequency")
 }
-fn highpass_2nd(audio: &mut [f64], sr: f64, cutoff: f64) {
+fn highpass_2nd(audio: &mut [f32], sr: f32, cutoff: f32) {
     let mut filter = DirectForm1::new(create_highpass_coeffs(sr, cutoff));
     forward_backward_filter(audio, &mut filter, 1);
 }
 fn highpass(
-    audio: &[f64],
-    sr: f64,
-    cutoff: f64,
-) -> (Vec<f64>, Vec<f64>) { 
+    audio: &[f32],
+    sr: f32,
+    cutoff: f32,
+) -> (Vec<f32>, Vec<f32>) { 
     let mut high = audio.to_vec(); 
     let mut filter = DirectForm1::new(create_highpass_coeffs(sr, cutoff));
     forward_backward_filter(&mut high, &mut filter, 2);
     let low = audio.iter()
         .zip(high.iter())
         .map(|(a, h)| a - h)
-        .collect::<Vec<f64>>();
+        .collect::<Vec<f32>>();
     (high, low)
 }
-fn square_lfo(num: usize, sr: f64, freq: f64) -> Vec<f64> {
+fn square_lfo(num: usize, sr: f32, freq: f32) -> Vec<f32> {
     let mut lfo = Vec::with_capacity(num);
     let samples = (sr / freq) as usize;
     for n in 0..num {
@@ -55,7 +55,7 @@ fn square_lfo(num: usize, sr: f64, freq: f64) -> Vec<f64> {
     }
     lfo
 }
-fn linear_interp(idx: &[f64], x: &[f64]) -> Vec<f64> {
+fn linear_interp(idx: &[f32], x: &[f32]) -> Vec<f32> {
     let mut output = Vec::with_capacity(idx.len());
     for &i in idx {
         let floor_idx = i.floor() as usize;
@@ -69,30 +69,30 @@ fn linear_interp(idx: &[f64], x: &[f64]) -> Vec<f64> {
     output
 }
 #[inline]
-fn rms(data: &[f64]) -> f64 {
+fn rms(data: &[f32]) -> f32 {
     let sum_sq = data.iter().fold(0.0, |acc, &x| acc + x * x);
-    (sum_sq * (1.0 / data.len() as f64)).sqrt()
+    (sum_sq * (1.0 / data.len() as f32)).sqrt()
 }
 fn apply_pitch_modulation(
-    band: &[f64],
-    sr: f64,
-    lfo: &[f64],
-    strength: f64,
-) -> Vec<f64> {
+    band: &[f32],
+    sr: f32,
+    lfo: &[f32],
+    strength: f32,
+) -> Vec<f32> {
     let band_len = band.len();
     let mut buf = lfo.iter()
-        .map(|&l| 2.0f64.powf(l * (strength * VIBRATO_FACTOR)))
-        .collect::<Vec<f64>>(); 
-    let mean_ratio = buf.iter().sum::<f64>() / band_len as f64;
+        .map(|&l| 2.0f32.powf(l * (strength * VIBRATO_FACTOR)))
+        .collect::<Vec<f32>>(); 
+    let mean_ratio = buf.iter().sum::<f32>() / band_len as f32;
     let ratio_0 = buf[0];
     let mut cumulative = 0.0;
     for (i, val) in buf.iter_mut().enumerate() {
         cumulative += *val;
-        *val = (cumulative - ratio_0) - (i as f64) * mean_ratio;
+        *val = (cumulative - ratio_0) - (i as f32) * mean_ratio;
     }
     highpass_2nd(&mut buf, sr, HP_CUTOFF_HZ);
     for (i, val) in buf.iter_mut().enumerate() {
-        *val = (i as f64 + *val).clamp(0.0, (band_len - 1) as f64);
+        *val = (i as f32 + *val).clamp(0.0, (band_len - 1) as f32);
     }
     let mut modulated = linear_interp(&buf, band);
     let gain = rms(band) / rms(&modulated);
@@ -100,10 +100,10 @@ fn apply_pitch_modulation(
     modulated
 }
 pub fn growl(
-    audio: &mut Vec<f64>,
-    sr: f64,
-    freq: f64,
-    strength: f64,
+    audio: &mut Vec<f32>,
+    sr: f32,
+    freq: f32,
+    strength: f32,
 ) {
     let orig_len = audio.len();
     if orig_len == 0 {

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use ort::{ session::{Session, builder::GraphOptimizationLevel}, value::Value };
-use ndarray::{Array2, Array4, azip};
+use ndarray::{Array2, Array4, azip, s};
 use oxifft::Complex;
 use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::stft::*};
 const SEG_LENGTH: usize = 32 * HOP_SIZE;
@@ -17,33 +17,22 @@ impl HNSEPLoader {
                 .commit_from_file(model_path).unwrap()
         }
     }
-    pub fn run(&mut self, wave: &[f64]) -> Vec<f64> {
+    pub fn run(&mut self, wave: &[f32]) -> Vec<f32> {
         let orig_len = wave.len();
         let total_pad = SEG_LENGTH * (((orig_len + HOP_SIZE - 1) / SEG_LENGTH) + 1) - (orig_len + HOP_SIZE); 
         let left = (total_pad / 2 / HOP_SIZE) * HOP_SIZE; 
-        let right = total_pad - left;
         let mut x_pad = Vec::with_capacity(orig_len + total_pad);
-        x_pad.extend(std::iter::repeat(0.0).take(left));
+        x_pad.resize(left, 0.0);
         x_pad.extend_from_slice(wave);
-        x_pad.extend(std::iter::repeat(0.0).take(right));
+        x_pad.resize(x_pad.capacity(), 0.0);
         let spec = stft_core(&x_pad, FFT_SIZE, HOP_SIZE);
         let t_spec = spec.ncols();
-        let (real, imag): (Vec<f32>, Vec<f32>) = spec
-            .iter() 
-            .map(|&c| {
-                (c.re as f32, c.im as f32)
-            })
-            .unzip();
         let target_t_spec = ((t_spec + 15) / 16) * 16;
-        let mut arr4 = Array4::from_elem((1, 2, OUTPUT_BIN, target_t_spec), 0.0f32);
-        azip!((index (_, c, f, t), val in &mut arr4) {
-            if t < t_spec {
-                *val = match c {
-                    0 => real[f + t * OUTPUT_BIN],
-                    1 => imag[f + t * OUTPUT_BIN],
-                    _ => 0.0,
-                };
-            }
+        let mut arr4 = Array4::zeros((1, 2, OUTPUT_BIN, target_t_spec));
+        let arr4_slice = arr4.slice_mut(s![0, .., .., ..t_spec]);
+        azip!((index (c, f, t), val in arr4_slice) {
+            let spec_idx = (f, t);
+            *val = if c as usize == 0 { spec[spec_idx].re } else { spec[spec_idx].im };
         });
         let input_value = Value::from_array(
             (
@@ -59,8 +48,8 @@ impl HNSEPLoader {
             .1;
         let mut spec_corrected = Array2::from_elem(spec.dim(), Complex::zero());
         azip!((index (f, t), sc_val in &mut spec_corrected, &s_val in &spec) {
-            let re = output_data[f + t * OUTPUT_BIN] as f64;
-            let im = output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN] as f64;
+            let re = output_data[f + t * OUTPUT_BIN];
+            let im = output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN];
             *sc_val = Complex::new(
                 s_val.re * re - s_val.im * im,
                 s_val.re * im + s_val.im * re

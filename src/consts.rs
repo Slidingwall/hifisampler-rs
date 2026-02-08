@@ -13,9 +13,9 @@ pub struct HifiConfig {
     pub hnsep_path: PathBuf,
     pub wave_norm: bool,
     pub trim_silence: bool,
-    pub silence_threshold: f64,
+    pub silence_threshold: f32,
     pub loop_mode: bool,
-    pub peak_limit: f64,
+    pub peak_limit: f32,
     pub fill: usize,
     pub max_workers: usize,
 }

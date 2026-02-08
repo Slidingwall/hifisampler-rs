@@ -127,7 +127,7 @@ mod tests {
         assert_eq!(pitch, 72);
         let tempo = tempo_parser(&args[11]).unwrap();
         assert_eq!(tempo, 150.0);
-        let offset: f64 = args[5].parse().unwrap();
+        let offset: f32 = args[5].parse().unwrap();
         assert_eq!(offset, -2.3);
     }
     #[test]

@@ -23,7 +23,7 @@ fn to_int12_stream<S: AsRef<str>>(b64: S) -> Vec<i16> {
         })
         .collect()
 }
-pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f64>> {
+pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f32>> {
     let mut res = Vec::new();
     let parts: Vec<_> = string.split('#').collect();
     let mut idx = 0;
@@ -43,13 +43,13 @@ pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f64>> {
         res.extend(to_int12_stream(parts[idx]));
     }
     Ok(res.into_iter()
-        .map(|x| x as f64 / 100.0)
+        .map(|x| x as f32 / 100.0)
         .chain(std::iter::once(0.0))
         .collect())
 }
 #[inline(always)]
-pub fn tempo_parser(arg: &str) -> Result<f64> {
-    let tempo: f64 = arg[1..].parse()?;
+pub fn tempo_parser(arg: &str) -> Result<f32> {
+    let tempo: f32 = arg[1..].parse()?;
     Ok(tempo)
 }
 pub fn pitch_parser(arg: &str) -> Result<i32> {
@@ -84,7 +84,7 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
     let octave = octave_part.parse::<i32>()? + 1;
     Ok(octave * 12 + note_val)
 }
-pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f64>>> {
+pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f32>>> {
     let input = s.replace('/', "");
     static SUPPORTED_FLAGS: &[&str] = &[
         "fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
@@ -94,7 +94,7 @@ pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f64>>> {
     let mut flags = HashMap::new();
     for cap in re.captures_iter(&input) {
         let flag = cap.get(1).unwrap().as_str().to_string();
-        let value = cap.get(2).map(|m| m.as_str().parse::<f64>().ok()).flatten();
+        let value = cap.get(2).map(|m| m.as_str().parse::<f32>().ok()).flatten();
         flags.insert(flag, value); 
     }
     Ok(flags)

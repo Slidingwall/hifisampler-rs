@@ -25,8 +25,8 @@ macro_rules! defer {
 }
 #[derive(Debug, Clone)]
 pub struct Features {
-    pub mel_origin: Array2<f64>,
-    pub scale: f64,
+    pub mel_origin: Array2<f32>,
+    pub scale: f32,
 }
 #[derive(Debug, Default)]
 struct CrossProcessLockManager {
@@ -108,12 +108,12 @@ impl CacheManager {
                 return None;
             }
         };
-        let scale_arr: Array0<f64> = reader.by_name("scale").unwrap();
+        let scale_arr: Array0<f32> = reader.by_name("scale").unwrap();
         let mel_origin = reader.by_name("mel_origin").unwrap();
         info!("Cache loaded: {}", path.display());
         Some(Features { mel_origin, scale: scale_arr.into_scalar() })
     }
-    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Vec<f64>> {
+    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Vec<f32>> {
         if force_gen || !path.exists() {
             return None;
         }
@@ -121,7 +121,7 @@ impl CacheManager {
         defer! {
             self.lock_manager.release(path);
         }
-        let hnsep_arr = read_npy::<_, Array1<f64>>(path).unwrap();
+        let hnsep_arr = read_npy::<_, Array1<f32>>(path).unwrap();
         let hnsep_vec = hnsep_arr.to_vec();
         info!("Hnsep cache loaded: {} (length: {})", path.display(), hnsep_vec.len());
         Some(hnsep_vec)
@@ -146,7 +146,7 @@ impl CacheManager {
         info!("Features saved to: {}", path.display());
         Some(features.clone())
     }
-    pub fn save_hnsep_cache(&self, path: &Path, data: Vec<f64>) -> Option<Vec<f64>> {
+    pub fn save_hnsep_cache(&self, path: &Path, data: Vec<f32>) -> Option<Vec<f32>> {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! {

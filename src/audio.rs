@@ -12,11 +12,11 @@ use symphonia::{
     },
     default::{get_codecs, get_probe},
 };
-const I16_MAX: f64 = i16::MAX as f64;
-fn resample_audio(audio: &[f64], in_sr: u32, out_sr: u32) -> Result<Vec<f64>> {
-    let ratio = out_sr as f64 / in_sr as f64;
+const I16_MAX: f32 = i16::MAX as f32;
+fn resample_audio(audio: &[f32], in_sr: u32, out_sr: u32) -> Result<Vec<f32>> {
+    let ratio = out_sr as f64 / in_sr as f64; // Due to rubato's API, we need to use f64 for the ratio
     let mut res = Vec::with_capacity((audio.len() as f64 * ratio).ceil() as usize);
-    let mut resampler = SincFixedIn::<f64>::new(
+    let mut resampler = SincFixedIn::<f32>::new(
         ratio,
         2.0,
         SincInterpolationParameters {
@@ -41,7 +41,7 @@ fn resample_audio(audio: &[f64], in_sr: u32, out_sr: u32) -> Result<Vec<f64>> {
     res.extend_from_slice(final_output);
     Ok(res)
 }
-pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
+pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
     let mut path = PathBuf::from(path.as_ref());
     if !path.exists() {
         let common_extensions = ["wav", "flac", "ogg", "mp3", "aac"];
@@ -72,7 +72,7 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
     let mut decoder = get_codecs()
         .make(&track.codec_params, &Default::default())?;
     let mut audio = Vec::with_capacity(409600);
-    let mut sample_buf = SampleBuffer::<f64>::new(4096, spec);
+    let mut sample_buf = SampleBuffer::<f32>::new(4096, spec);
     let track_id = track.id;
     while let Ok(packet) = probed.format.next_packet() {
         if packet.track_id() != track_id {
@@ -85,7 +85,7 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
                 audio.extend_from_slice(samples);
             } else {
                 audio.extend(samples.chunks(channels).map(|frame| {
-                    frame.iter().sum::<f64>() / channels as f64
+                    frame.iter().sum::<f32>() / channels as f32
                 }));
             }
         }
@@ -96,7 +96,7 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f64>> {
         resample_audio(&audio, spec.rate, SAMPLE_RATE)
     }
 }
-pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f64]) -> Result<()> {
+pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f32]) -> Result<()> {
     let mut writer = WavWriter::new(
         File::create(path.as_ref())?,
         WavSpec {
