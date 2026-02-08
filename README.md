@@ -79,6 +79,6 @@ Basically same as Python version.
 [^2]: Globally enabled when `loop_mode` is set to `true` in `hificonfig.ini`.  
       当`hificonfig.ini`中，`loop_mode`为`true`时全局启用。  
 
-You can download OpenUTAU resampler manifest file from [名無絃](bowlroll.net/file/335049).  
-您可以下载[名無絃](bowlroll.net/file/335049)提供的OpenUTAU重采样器配置文件。  
+You can download OpenUTAU resampler manifest file from [名無絃](https://bowlroll.net/file/335049).  
+您可以下载[名無絃](https://bowlroll.net/file/335049)提供的OpenUTAU重采样器配置文件。  
 

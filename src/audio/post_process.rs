@@ -16,17 +16,16 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f32>, b: f32) {
     let comp_spec = stft_core(&*wave, FFT_SIZE, HOP_SIZE);
     let mut spec_amp = Array2::zeros(comp_spec.dim());
     let mut spec_phase = Array2::zeros(comp_spec.dim());
-    azip!((amp_val in &mut spec_amp, &c in &comp_spec) {
+    azip!((amp_val in &mut spec_amp, phase_val in &mut spec_phase, &c in &comp_spec) {
         *amp_val = c.norm();
-    });
-    azip!((phase_val in &mut spec_phase, &c in &comp_spec) {
         *phase_val = c.arg();
     });
+    let fft_dnm = 1. / (FFT_SIZE / 1500 + 3000) as f32;
     spec_amp.mapv_inplace(|x| x.max(1e-9).ln());
     spec_amp.axis_iter_mut(Axis(0))
         .enumerate()
         .for_each(|(j, mut bin)| {
-            let filter = (b * (1.0 - (SAMPLE_RATE as f32 * j as f32) / (FFT_SIZE / 1500 + 3000) as f32)).clamp(-2.0, 2.0);
+            let filter = (b * (1.0 - (SAMPLE_RATE as f32 * j as f32) * fft_dnm)).clamp(-2.0, 2.0);
             bin.iter_mut().for_each(|amp_db| *amp_db += filter);
         });
     let mut comp_spec_istft = Array2::from_elem((FFT_SIZE / 2 + 1, comp_spec.ncols()), Complex::zero());
@@ -50,29 +49,21 @@ fn rms_db(audio: &[f32]) -> f32 {
         .map(|&x| x * x)
         .sum();
     let rms = (sum_sq / audio.len() as f32).sqrt();
-    if rms < 1e-10 {
-        f32::NEG_INFINITY
-    } else {
-        20.0 * rms.log10()
+    match rms < 1e-10 {
+        true => f32::NEG_INFINITY,
+        false => 20.0 * rms.log10(),
     }
 }
 fn linear_fade(length: usize, fade_in: bool, sample_rate: f32) -> Vec<f32> {
     let fade_len = ((0.2 * sample_rate) as usize).min(length / 4);
-    let mut fade = Vec::with_capacity(length); 
-    if fade_in {
-        fade.extend(std::iter::repeat(1.0).take(length));
-        for i in 0..fade_len {
-            let val = (i as f32) / ((fade_len - 1).max(1)) as f32;
-            fade[i] = val;
-        }
-    } else {
-        fade.extend(std::iter::repeat(1.0).take(length - fade_len));
-        for i in 0..fade_len {
-            let val = (i as f32) / ((fade_len - 1).max(1)) as f32;
-            fade.push(val);
-        }
-    }
-    fade
+    let fade_dnm = 1. / (fade_len - 1).max(1) as f32;
+    let fade_out = length - fade_len;
+    (0..length)
+        .map(|i| match fade_in {
+            true => if i < fade_len { i as f32 * fade_dnm } else { 1.0 },
+            false => if i >= fade_out { (i - fade_out) as f32 * fade_dnm } else { 1.0 },
+        })
+        .collect()
 }
 pub fn loudness_norm(
     wave: &mut Vec<f32>,
@@ -102,7 +93,7 @@ pub fn loudness_norm(
             }
             match start {
                 Some(s) => {
-                    (s, ((end / hop_len + 1 + ((0.1 * sample_rate) as usize / hop_len)) * hop_len + frame_len)
+                    (s, ((end / hop_len + 11) * hop_len + frame_len)
                         .min(orig_len), true)
                 }
                 None => (0, orig_len, false),
@@ -122,7 +113,7 @@ pub fn loudness_norm(
     meter.push(
         wave[val_start..(val_start + min_len.max(val_len)).min(wave.len())]
             .iter()
-            .map(|&x| x as f32)
+            .copied()
     );
     let measure = gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs() as f32;
     let gain = 10.0f32.powf((target - measure) * norm_strength as f32 * 0.0005);

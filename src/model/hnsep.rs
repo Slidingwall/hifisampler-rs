@@ -24,19 +24,18 @@ impl HNSEPLoader {
         let mut x_pad = Vec::with_capacity(orig_len + total_pad);
         x_pad.resize(left, 0.0);
         x_pad.extend_from_slice(wave);
-        x_pad.resize(x_pad.capacity(), 0.0);
+        x_pad.resize(orig_len + total_pad, 0.0);
         let spec = stft_core(&x_pad, FFT_SIZE, HOP_SIZE);
         let t_spec = spec.ncols();
         let target_t_spec = ((t_spec + 15) / 16) * 16;
         let mut arr4 = Array4::zeros((1, 2, OUTPUT_BIN, target_t_spec));
         let arr4_slice = arr4.slice_mut(s![0, .., .., ..t_spec]);
         azip!((index (c, f, t), val in arr4_slice) {
-            let spec_idx = (f, t);
-            *val = if c as usize == 0 { spec[spec_idx].re } else { spec[spec_idx].im };
+            *val = if c as usize == 0 { spec[(f, t)].re } else { spec[(f, t)].im };
         });
         let input_value = Value::from_array(
             (
-                [1, 2, OUTPUT_BIN as i64, target_t_spec as i64],
+                [1, 2, OUTPUT_BIN, target_t_spec],
                 arr4.into_raw_vec_and_offset().0
             ),
         ).unwrap();
@@ -46,10 +45,12 @@ impl HNSEPLoader {
             .try_extract_tensor::<f32>()
             .unwrap()
             .1;
+        let bin_idx = OUTPUT_BIN * target_t_spec;
+        let t_offsets: Vec<usize> = (0..t_spec).map(|t| t * OUTPUT_BIN).collect();
         let mut spec_corrected = Array2::from_elem(spec.dim(), Complex::zero());
         azip!((index (f, t), sc_val in &mut spec_corrected, &s_val in &spec) {
-            let re = output_data[f + t * OUTPUT_BIN];
-            let im = output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN];
+            let re = output_data[f + t_offsets[t]];
+            let im = output_data[bin_idx + f + t_offsets[t]];
             *sc_val = Complex::new(
                 s_val.re * re - s_val.im * im,
                 s_val.re * im + s_val.im * re

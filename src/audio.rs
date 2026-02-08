@@ -69,6 +69,7 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
         rate: track.codec_params.sample_rate.unwrap(),
     };
     let channels = spec.channels.count();
+    let channels_f32 = channels as f32;
     let mut decoder = get_codecs()
         .make(&track.codec_params, &Default::default())?;
     let mut audio = Vec::with_capacity(409600);
@@ -78,16 +79,16 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
         if packet.track_id() != track_id {
             continue;
         }
-        if let Ok(decoded) = decoder.decode(&packet) {
-            sample_buf.copy_interleaved_ref(decoded);
-            let samples = sample_buf.samples();
-            if channels == 1 {
-                audio.extend_from_slice(samples);
-            } else {
-                audio.extend(samples.chunks(channels).map(|frame| {
-                    frame.iter().sum::<f32>() / channels as f32
-                }));
-            }
+        let Some(decoded) = decoder.decode(&packet).ok() else {
+            continue;
+        };
+        sample_buf.copy_interleaved_ref(decoded);
+        let samples = sample_buf.samples();
+        match channels {
+            1 => audio.extend_from_slice(samples),
+            _ => audio.extend(samples.chunks(channels).map(|frame| {
+                frame.iter().sum::<f32>() / channels_f32
+            })),
         }
     }
     if spec.rate == SAMPLE_RATE {
@@ -106,9 +107,9 @@ pub fn write_audio<P: AsRef<Path>>(path: P, audio: &[f32]) -> Result<()> {
             sample_format: SampleFormat::Int
         },
     )?;
-    audio.iter()
-        .map(|&s| (s * I16_MAX) as i16)
-        .try_for_each(|sample| writer.write_sample(sample))?;
+    for &s in audio {
+        writer.write_sample((s * I16_MAX) as i16)?;
+    }
     writer.finalize()?;
     Ok(())
 }

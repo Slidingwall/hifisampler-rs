@@ -1,6 +1,13 @@
 use anyhow::{anyhow, Result};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
+static FLAG_REGEX: Lazy<Regex> = Lazy::new(|| {
+    let supported_flags = ["fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
+        "A", "B", "G", "P", "S", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG"];
+    Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", supported_flags.join("|")))
+        .expect("Failed to compile flag regex (static)")
+});
 #[inline(always)]
 fn to_uint6(c: u8) -> u8 {
     match c {
@@ -43,11 +50,12 @@ pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f32>> {
         res.extend(to_int12_stream(parts[idx]));
     }
     Ok(res.into_iter()
-        .map(|x| x as f32 / 100.0)
+        .map(|x| x as f32 * 0.01)
         .chain(std::iter::once(0.0))
         .collect())
 }
 #[inline(always)]
+#[allow(dead_code)]
 pub fn tempo_parser(arg: &str) -> Result<f32> {
     let tempo: f32 = arg[1..].parse()?;
     Ok(tempo)
@@ -86,13 +94,8 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
 }
 pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f32>>> {
     let input = s.replace('/', "");
-    static SUPPORTED_FLAGS: &[&str] = &[
-        "fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
-        "A", "B", "G", "P", "S", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG"
-    ];
-    let re = Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", SUPPORTED_FLAGS.join("|")))?;
     let mut flags = HashMap::new();
-    for cap in re.captures_iter(&input) {
+    for cap in FLAG_REGEX.captures_iter(&input) {
         let flag = cap.get(1).unwrap().as_str().to_string();
         let value = cap.get(2).map(|m| m.as_str().parse::<f32>().ok()).flatten();
         flags.insert(flag, value); 

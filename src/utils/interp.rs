@@ -38,12 +38,15 @@ impl Akima {
     pub fn sample_with_slice(&self, x: &[f32]) -> Vec<f32> {
         let mut res = Vec::with_capacity(x.len());
         let mut i = 0;
+        let mut i_float = 0.;
+        let max_idx = self.len - 1;
         for &t in x {
-            while i < self.len - 1 && ((i + 1) as f32) < t {
+            while i < max_idx && (i_float + 1.) < t {
                 i += 1;
+                i_float += 1.;
             }
             let [c0, c1, c2, c3] = self.coeffs[i];
-            let r = t - i as f32;
+            let r = t - i_float;
             res.push(c0 + r * (c1 + r * (c2 + r * c3)));
         }
         res

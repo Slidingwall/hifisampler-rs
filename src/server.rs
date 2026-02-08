@@ -21,7 +21,7 @@ pub fn split_arguments(input: &str) -> Vec<String> {
     args
 }
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
-    let ready = state.server_ready.load(Ordering::SeqCst);
+    let ready = state.server_ready.load(Ordering::Relaxed);
     let (status, msg) = if ready {
         (StatusCode::OK, "Server Ready")
     } else {
@@ -31,7 +31,7 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     (status, msg.to_string())
 }
 async fn handle_post(State(state): State<AppState>, body: String) -> (StatusCode, String) {
-    if !state.server_ready.load(Ordering::SeqCst) {
+    if !state.server_ready.load(Ordering::Relaxed) {
         warn!("POST arrived but server not ready.");
         return (
             StatusCode::SERVICE_UNAVAILABLE,

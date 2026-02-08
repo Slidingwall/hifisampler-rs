@@ -46,8 +46,9 @@ fn highpass(
 fn square_lfo(num: usize, sr: f32, freq: f32) -> Vec<f32> {
     let mut lfo = Vec::with_capacity(num);
     let samples = (sr / freq) as usize;
+    let half_samples = samples / 2;
     for n in 0..num {
-        if (n % samples) < (samples / 2) {
+        if (n % samples) < half_samples {
             lfo.push(1.0);
         } else {
             lfo.push(-1.0);
@@ -57,10 +58,11 @@ fn square_lfo(num: usize, sr: f32, freq: f32) -> Vec<f32> {
 }
 fn linear_interp(idx: &[f32], x: &[f32]) -> Vec<f32> {
     let mut output = Vec::with_capacity(idx.len());
+    let max_idx = x.len() - 1;
     for &i in idx {
         let floor_idx = i.floor() as usize;
-        let val = if floor_idx >= x.len() - 1 {
-            x[x.len() - 1]
+        let val = if floor_idx >= max_idx {
+            x[max_idx]
         } else {
             lerp(x[floor_idx], x[floor_idx + 1], i.fract())
         };
@@ -80,8 +82,9 @@ fn apply_pitch_modulation(
     strength: f32,
 ) -> Vec<f32> {
     let band_len = band.len();
+    let vibrato = strength * VIBRATO_FACTOR;
     let mut buf = lfo.iter()
-        .map(|&l| 2.0f32.powf(l * (strength * VIBRATO_FACTOR)))
+        .map(|&l| 2.0f32.powf(l * vibrato))
         .collect::<Vec<f32>>(); 
     let mean_ratio = buf.iter().sum::<f32>() / band_len as f32;
     let ratio_0 = buf[0];
@@ -91,8 +94,9 @@ fn apply_pitch_modulation(
         *val = (cumulative - ratio_0) - (i as f32) * mean_ratio;
     }
     highpass_2nd(&mut buf, sr, HP_CUTOFF_HZ);
+    let max_idx =(band_len - 1) as f32;
     for (i, val) in buf.iter_mut().enumerate() {
-        *val = (i as f32 + *val).clamp(0.0, (band_len - 1) as f32);
+        *val = (i as f32 + *val).clamp(0.0, max_idx);
     }
     let mut modulated = linear_interp(&buf, band);
     let gain = rms(band) / rms(&modulated);

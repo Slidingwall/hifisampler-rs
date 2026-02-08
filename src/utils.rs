@@ -23,24 +23,26 @@ pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
     let (n_r, n_xi) = (y.nrows(), xi.len());
     let mut res = Array2::zeros((n_r, n_xi));
     let (y_col0, y_col_e) = (y.column(0), y.column(x.len() - 1));
-    let (x_first, x_last) = (x[0], *x.last().unwrap());
+    let (x_first, x_last) = (x[0] + EPSILON, *x.last().unwrap() - EPSILON);
     azip!((mut res_col in res.axis_iter_mut(Axis(1)), &xi_val in xi) {
-        if xi_val >= x_last - EPSILON {
-            res_col.assign(&y_col_e);
-        } else if xi_val <= x_first + EPSILON {
-            res_col.assign(&y_col0);
-        } else {
-            let idx = x.binary_search_by(|&p| p.partial_cmp(&xi_val).unwrap_or(Ordering::Greater))
-                .unwrap_or_else(|i| i.saturating_sub(1))
-                .clamp(0, x.len() - 2);
-            let t = if (x[idx+1] - x[idx]).abs() < EPSILON { 0.0 } else { (xi_val - x[idx]) / (x[idx+1] - x[idx]) };
-            azip!((
-                res in &mut res_col,
-                &y0 in &y.column(idx),
-                &y1 in &y.column(idx + 1)
-            ) {
-                *res = lerp(y0, y1, t);
-            });
+        match xi_val {
+            val if val >= x_last => res_col.assign(&y_col_e),
+            val if val <= x_first => res_col.assign(&y_col0),
+            val => {
+                let idx = x.binary_search_by(|&p| p.partial_cmp(&val).unwrap_or(Ordering::Greater))
+                    .map_err(|i| i.saturating_sub(1))
+                    .unwrap()
+                    .clamp(0, x.len() - 2);
+                
+                let dx = x[idx + 1] - x[idx];
+                let t = if dx.abs() < EPSILON { 0.0 } else { (val - x[idx]) / dx };
+                
+                let y0_col = y.column(idx);
+                let y1_col = y.column(idx + 1);
+                azip!((res in &mut res_col, &y0 in &y0_col, &y1 in &y1_col) {
+                    *res = lerp(y0, y1, t);
+                });
+            }
         }
     });
     res
@@ -48,33 +50,33 @@ pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
 pub fn reflect_pad_2d(arr: ArrayView2<f32>, pad: usize) -> Array2<f32> {
     let (n_rows, n_cols) = arr.dim(); 
     let mut pad_arr = Array2::zeros((n_rows, n_cols + pad)); 
-    azip!((
-        mut pad_row in pad_arr.axis_iter_mut(Axis(0)),
-        arr_row in arr.axis_iter(Axis(0))
-    ) {
+    azip!((mut pad_row in pad_arr.axis_iter_mut(Axis(0)), arr_row in arr.axis_iter(Axis(0))) {
         pad_row.slice_mut(s![0..n_cols]).assign(&arr_row);
     });
-    let ref_len = if n_cols > 1 { n_cols - 1 } else { 1 };
+    let ref_len = n_cols.saturating_sub(1).max(1);
+    let cur_idx = n_cols.saturating_sub(2);
     pad_arr.axis_iter_mut(Axis(1))
         .enumerate()
         .for_each(|(col_idx, mut pad_col)| {
             if col_idx >= n_cols {
-                pad_col.assign(&arr.column((n_cols - 2).saturating_sub((col_idx - n_cols) % ref_len)))
+                pad_col.assign(&arr.column((cur_idx).saturating_sub((col_idx - n_cols) % ref_len)))
             }
         });
     pad_arr
 }
 pub fn reflect_pad_1d(s: &mut Vec<f32>, left: usize, right: usize) {
     let len = s.len();
+    let len_1 = len - 1;
+    let len_2 = len - 2;
     s.reserve(left + right);
     s.resize(left + len + right, 0.0);
     s.copy_within(0..len, left);
     for i in 0..left {
-        let m_idx = 1 + (i % (len - 1));
+        let m_idx = 1 + (i % len_1);
         s[i] = s[left + m_idx];
     }
     for i in 0..right {
-        let m_idx = (len - 2) - (i % (len - 1));
+        let m_idx = len_2 - (i % len_1);
         s[left + len + i] = s[left + m_idx];
     }
 }

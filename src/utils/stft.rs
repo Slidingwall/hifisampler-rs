@@ -86,6 +86,7 @@ pub fn istft_core(
             .map(|_| OnceCell::new())
             .collect()
     );
+    let max_bins = freq_bins - 1;
     pool.parallel_for(n_frames, |frame_idx| {
         let mut full_spec = vec![Complex::zero(); fft_size];
         let mut frame = vec![Complex::zero(); fft_size];
@@ -95,7 +96,7 @@ pub fn istft_core(
             _ => return, 
         };
         full_spec[0..freq_bins].copy_from_slice(spec_raw);
-        for i in 1..freq_bins - 1 {
+        for i in 1..max_bins {
             full_spec[fft_size - i] = full_spec[i].conj();
         }
         plan.execute(&full_spec, &mut frame);
