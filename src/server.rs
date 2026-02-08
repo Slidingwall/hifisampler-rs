@@ -38,7 +38,6 @@ async fn handle_post(State(state): State<AppState>, body: String) -> (StatusCode
             "Server initializing, please retry.".to_string(),
         );
     }
-    let _permit = state.concurrency_semaphore.acquire().await.unwrap();
     info!("post_data_string: {}", body);
     let args = split_arguments(&body);
     let note_info = format!(
@@ -47,7 +46,12 @@ async fn handle_post(State(state): State<AppState>, body: String) -> (StatusCode
         PathBuf::from(&args[1]).file_name().unwrap().to_str().unwrap()
     );
     info!("Queued {} ...", note_info);
-    match tokio::task::spawn_blocking(move || Resampler::new(args)).await.unwrap() {
+    let permit = state.concurrency_semaphore.acquire_owned().await.unwrap();
+    let task_result = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        Resampler::new(args)
+    }).await.unwrap();
+    match task_result {
         Ok(()) => {
             info!("Processing {} successful.", note_info);
             (StatusCode::OK, format!("Success: {}", note_info))

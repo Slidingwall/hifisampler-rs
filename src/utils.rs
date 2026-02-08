@@ -5,7 +5,7 @@ pub mod cache;
 pub mod growl;
 pub mod mel;
 mod mel_basis;
-use ndarray::{Array2, ArrayView2, Axis, azip, parallel::prelude::*, s};
+use ndarray::{Array2, ArrayView2, Axis, azip, s};
 use std::{cmp::Ordering, f64::EPSILON};
 #[inline(always)]
 pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -17,14 +17,14 @@ pub fn midi_to_hz(x: f64) -> f64 {
 }
 #[inline(always)]
 pub fn dynamic_range_compression(s: &mut Array2<f64>) {
-    s.par_mapv_inplace(|x| x.max(1e-9).ln());
+    s.mapv_inplace(|x| x.max(1e-9).ln());
 }
 pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
     let (n_r, n_xi) = (y.nrows(), xi.len());
     let mut res = Array2::zeros((n_r, n_xi));
     let (y_col0, y_col_e) = (y.column(0), y.column(x.len() - 1));
     let (x_first, x_last) = (x[0], *x.last().unwrap());
-    par_azip!((mut res_col in res.axis_iter_mut(Axis(1)), &xi_val in xi) {
+    azip!((mut res_col in res.axis_iter_mut(Axis(1)), &xi_val in xi) {
         if xi_val >= x_last - EPSILON {
             res_col.assign(&y_col_e);
         } else if xi_val <= x_first + EPSILON {
@@ -48,7 +48,7 @@ pub fn interp1d(x: &[f64], y: &Array2<f64>, xi: &[f64]) -> Array2<f64> {
 pub fn reflect_pad_2d(arr: ArrayView2<f64>, pad: usize) -> Array2<f64> {
     let (n_rows, n_cols) = arr.dim(); 
     let mut pad_arr = Array2::zeros((n_rows, n_cols + pad)); 
-    par_azip!((
+    azip!((
         mut pad_row in pad_arr.axis_iter_mut(Axis(0)),
         arr_row in arr.axis_iter(Axis(0))
     ) {
@@ -56,7 +56,6 @@ pub fn reflect_pad_2d(arr: ArrayView2<f64>, pad: usize) -> Array2<f64> {
     });
     let ref_len = if n_cols > 1 { n_cols - 1 } else { 1 };
     pad_arr.axis_iter_mut(Axis(1))
-        .into_par_iter() 
         .enumerate()
         .for_each(|(col_idx, mut pad_col)| {
             if col_idx >= n_cols {

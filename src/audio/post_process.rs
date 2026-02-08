@@ -1,5 +1,5 @@
 use bs1770::{ChannelLoudnessMeter, gated_mean};
-use ndarray::{Array2, Axis, parallel::prelude::*};
+use ndarray::{Array2, Axis, azip};
 use oxifft::Complex;
 use crate::{
     consts::{FFT_SIZE, HOP_SIZE, HIFI_CONFIG, SAMPLE_RATE},
@@ -16,22 +16,21 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f64>, b: f64) {
     let comp_spec = stft_core(&*wave, FFT_SIZE, HOP_SIZE);
     let mut spec_amp = Array2::zeros(comp_spec.dim());
     let mut spec_phase = Array2::zeros(comp_spec.dim());
-    par_azip!((amp_val in &mut spec_amp, &c in &comp_spec) {
+    azip!((amp_val in &mut spec_amp, &c in &comp_spec) {
         *amp_val = c.norm();
     });
-    par_azip!((phase_val in &mut spec_phase, &c in &comp_spec) {
+    azip!((phase_val in &mut spec_phase, &c in &comp_spec) {
         *phase_val = c.arg();
     });
-    spec_amp.par_mapv_inplace(|x| x.max(1e-9).ln());
+    spec_amp.mapv_inplace(|x| x.max(1e-9).ln());
     spec_amp.axis_iter_mut(Axis(0))
-        .into_par_iter()
         .enumerate()
         .for_each(|(j, mut bin)| {
             let filter = (b * (1.0 - (SAMPLE_RATE as f64 * j as f64) / (FFT_SIZE / 1500 + 3000) as f64)).clamp(-2.0, 2.0);
             bin.iter_mut().for_each(|amp_db| *amp_db += filter);
         });
     let mut comp_spec_istft = Array2::from_elem((FFT_SIZE / 2 + 1, comp_spec.ncols()), Complex::zero());
-    par_azip!((comp_val in &mut comp_spec_istft, &phase in &spec_phase, &amp_db in &spec_amp) {
+    azip!((comp_val in &mut comp_spec_istft, &phase in &spec_phase, &amp_db in &spec_amp) {
         let amp = amp_db.exp(); 
         *comp_val = Complex::new(amp * phase.cos(), amp * phase.sin());
     });

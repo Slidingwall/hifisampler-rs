@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use ort::{ session::{Session, builder::GraphOptimizationLevel}, value::Value };
-use ndarray::{Array2, Array4, parallel::prelude::*};
+use ndarray::{Array2, Array4, azip};
 use oxifft::Complex;
 use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::stft::*};
 const SEG_LENGTH: usize = 32 * HOP_SIZE;
@@ -29,14 +29,14 @@ impl HNSEPLoader {
         let spec = stft_core(&x_pad, FFT_SIZE, HOP_SIZE);
         let t_spec = spec.ncols();
         let (real, imag): (Vec<f32>, Vec<f32>) = spec
-            .par_iter() 
+            .iter() 
             .map(|&c| {
                 (c.re as f32, c.im as f32)
             })
             .unzip();
         let target_t_spec = ((t_spec + 15) / 16) * 16;
         let mut arr4 = Array4::from_elem((1, 2, OUTPUT_BIN, target_t_spec), 0.0f32);
-        par_azip!((index (_, c, f, t), val in &mut arr4) {
+        azip!((index (_, c, f, t), val in &mut arr4) {
             if t < t_spec {
                 *val = match c {
                     0 => real[f + t * OUTPUT_BIN],
@@ -58,7 +58,7 @@ impl HNSEPLoader {
             .unwrap()
             .1;
         let mut spec_corrected = Array2::from_elem(spec.dim(), Complex::zero());
-        par_azip!((index (f, t), sc_val in &mut spec_corrected, &s_val in &spec) {
+        azip!((index (f, t), sc_val in &mut spec_corrected, &s_val in &spec) {
             let re = output_data[f + t * OUTPUT_BIN] as f64;
             let im = output_data[OUTPUT_BIN * target_t_spec + f + t * OUTPUT_BIN] as f64;
             *sc_val = Complex::new(

@@ -2,7 +2,7 @@ use crate::{
     consts::{FFT_SIZE, ORIGIN_HOP_SIZE},
     utils::{mel_basis::MEL_BASIS_DATA, reflect_pad_1d, stft::stft_core},
 };
-use ndarray::{Array2, ArrayView1, Axis, parallel::prelude::*, s};
+use ndarray::{Array2, ArrayView1, Axis, azip, s};
 const TARGET_BINS: usize = FFT_SIZE / 2 + 1;
 pub fn mel(wave: &mut Vec<f64>, key_shift: f64, speed: f64) -> Array2<f64> {
     let fft_size = (FFT_SIZE as f64 * 2f64.powf(key_shift / 12.0)).round() as usize;
@@ -12,20 +12,20 @@ pub fn mel(wave: &mut Vec<f64>, key_shift: f64, speed: f64) -> Array2<f64> {
     let comp_spec = stft_core(&wave, fft_size, hop_len);
     let n_frames = comp_spec.ncols();
     let mut spec = Array2::zeros((comp_spec.nrows(), n_frames));
-    par_azip!((spec_elem in &mut spec, comp_elem in &comp_spec) {
+    azip!((spec_elem in &mut spec, comp_elem in &comp_spec) {
         *spec_elem = comp_elem.norm();
     });
     let proc_spec = if key_shift != 0. {
         let mut target = Array2::zeros((TARGET_BINS, n_frames));
         let src_view = spec.slice(s![..TARGET_BINS, ..]);
         target.slice_mut(s![..src_view.nrows(), ..]).assign(&src_view);
-        target.par_mapv_inplace(|x| x * scale);
+        target.mapv_inplace(|x| x * scale);
         target
     } else {
         spec
     };
     let mut mel_spec = Array2::zeros((128, n_frames));
-    par_azip!((mut mel_row in mel_spec.axis_iter_mut(Axis(0)), nonzeros in ArrayView1::from(&MEL_BASIS_DATA)) {
+    azip!((mut mel_row in mel_spec.axis_iter_mut(Axis(0)), nonzeros in ArrayView1::from(&MEL_BASIS_DATA)) {
         for (frame_idx, mel_val) in mel_row.iter_mut().enumerate() {
             let mut sum = 0.0;
             for &(freq_idx, weight) in *nonzeros {

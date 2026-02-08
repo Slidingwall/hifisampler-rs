@@ -15,10 +15,14 @@ pub fn initialize_models() {
     }
     let hifigan = Arc::new(Mutex::new(HiFiGANLoader::new(&HIFI_CONFIG.vocoder_path)));
     VOCODER.set(hifigan).unwrap();
-    tracing::info!("HiFiGAN model loaded successfully");
+    tracing::info!("HiFiGAN model loaded successfully vocoder_path={}",
+        HIFI_CONFIG.vocoder_path.display(),
+    );
     let hnsep = Arc::new(Mutex::new(HNSEPLoader::new(&HIFI_CONFIG.hnsep_path)));
     REMOVER.set(hnsep).unwrap();
-    tracing::info!("HNSEP model loaded successfully");
+    tracing::info!("HNSEP model loaded successfully hnsep_path={}",
+        HIFI_CONFIG.hnsep_path.display(),
+    );
     tracing::info!("All models initialized successfully.");
 }
 pub fn get_vocoder() -> Arc<Mutex<HiFiGANLoader>> {

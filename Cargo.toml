@@ -7,11 +7,11 @@ edition = "2024"
 hound = "3.5.1"
 symphonia = "0.5.5"
 rubato = { version = "0.16.2", default-features = false } #Do not upgrade this to 1.x!
-oxifft = { version = "0.1.2" , features = ["streaming", "threading"] }
+oxifft = { version = "0.1.2" , features = ["streaming"] }
 bs1770 = "1.0.0"
 biquad = "0.5.0"
 
-ndarray = { version ="0.17.2" , features = ["rayon"] }
+ndarray = "0.17.2"
 ndarray-npy = "0.10.0"
 #rayon = "1.11.0"
 regex = "1.12.3"
@@ -22,7 +22,7 @@ axum = "0.8.8"
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "net", "fs", "macros"] }  
 rust-ini = "=0.21.3"
 
-anyhow = { version = "1.0", features = ["backtrace"] }
+anyhow = { version = "1.0.101", features = ["backtrace"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
 

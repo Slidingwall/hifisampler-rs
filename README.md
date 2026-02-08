@@ -1,5 +1,6 @@
 # hifisampler-rs 
-(WIP) A Rust alternative backends of hifisampler. （仍在开发）Hifisampler的Rust替代后端。
+(WIP) A Rust alternative backends of UTAU resampler hifisampler.  
+（仍在开发）UTAU重采样器Hifisampler的Rust替代后端。
 
 This project is based on [StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs) and [hifisampler](https://github.com/openhachimi/hifisampler), and some code from [StrayCrab](https://github.com/layetri/straycrab) was also referenced.  
 本项目基于[StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs)与[hifisampler](https://github.com/openhachimi/hifisampler)，同时还参考了部分[StrayCrab](https://github.com/layetri/straycrab)的代码。  
