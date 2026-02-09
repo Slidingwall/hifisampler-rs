@@ -43,9 +43,7 @@ pub fn stft_core(
     let mut spec = Array2::from_shape_fn((freq_bins, n_frames), |_| Complex::zero()); 
     let pool = get_default_pool();
     let result: Arc<Vec<OnceCell<Vec<Complex<f32>>>>> = Arc::new(
-        (0..n_frames)
-            .map(|_| OnceCell::new()) 
-            .collect()
+        (0..n_frames).map(|_| OnceCell::new()).collect()
     );
     pool.parallel_for(n_frames, |frame_idx| {
         let start = frame_idx * hop_size;
@@ -59,9 +57,9 @@ pub fn stft_core(
         output.truncate(freq_bins); 
         let _ = result[frame_idx].set(output);
     });
-    for (frame_idx, once_result) in result.iter().enumerate() {
-        spec.slice_mut(s![.., frame_idx]).assign(&ArrayView1::from(once_result.get().unwrap()));
-    }
+    result.iter().enumerate().for_each(|(frame_idx, once_result)| {
+            spec.slice_mut(s![.., frame_idx]).assign(&ArrayView1::from(once_result.get().unwrap()));
+        });
     spec
 }
 pub fn istft_core(
@@ -91,14 +89,11 @@ pub fn istft_core(
         let mut full_spec = vec![Complex::zero(); fft_size];
         let mut frame = vec![Complex::zero(); fft_size];
         let spec_slc = spec.slice(s![.., frame_idx]);
-        let spec_raw = match spec_slc.as_slice() {
-            Some(s) if s.len() == freq_bins => s,
-            _ => return, 
-        };
+        let spec_raw = if let Some(s) = spec_slc.as_slice() && s.len() == freq_bins {s} else {return;};
         full_spec[0..freq_bins].copy_from_slice(spec_raw);
-        for i in 1..max_bins {
+        (1..max_bins).for_each(|i| {
             full_spec[fft_size - i] = full_spec[i].conj();
-        }
+        });
         plan.execute(&full_spec, &mut frame);
         let ifft_result: Vec<f32> = frame
             .iter()
@@ -108,19 +103,19 @@ pub fn istft_core(
         let _ = result[frame_idx].set(ifft_result);
     });
     let window_sq = ISTFT_WINDOW_SQ.as_ref();
-    for (frame_idx, once_result) in result.iter().enumerate() {
-        let res = once_result.get().unwrap();
-        let start = frame_idx * hop_size;
-        for i in 0..fft_size {
-            output[start + i] += res[i];
-            win_sum[start + i] += window_sq[i];
-        }
-    }
-    for i in 0..out_len {
+    result.iter().enumerate().for_each(|(frame_idx, once_result)| {
+            let res = once_result.get().unwrap();
+            let start = frame_idx * hop_size;
+            (0..fft_size).for_each(|i| {
+                output[start + i] += res[i];
+                win_sum[start + i] += window_sq[i];
+            });
+        });
+    (0..out_len).for_each(|i| {
         if win_sum[i] > 1e-10 {
             output[i] /= win_sum[i];
         }
-    }
+    });
     output.resize(target_len, 0.0);
     output
 }

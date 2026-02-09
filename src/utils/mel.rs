@@ -27,15 +27,15 @@ pub fn mel(wave: &mut Vec<f32>, key_shift: f32, speed: f32) -> Array2<f32> {
     let mut mel_spec = Array2::zeros((128, n_frames));
     let proc_bins = proc_spec.nrows();
     azip!((mut mel_row in mel_spec.axis_iter_mut(Axis(0)), nonzeros in ArrayView1::from(&MEL_BASIS_DATA)) {
-        for (frame_idx, mel_val) in mel_row.iter_mut().enumerate() {
-            let mut sum = 0.0;
-            for &(freq_idx, weight) in *nonzeros {
-                if freq_idx < proc_bins {
-                    sum += proc_spec[(frame_idx, freq_idx)] * weight;
-                }
-            }
+        mel_row.iter_mut().enumerate().for_each(|(frame_idx, mel_val)| {
+            let sum = nonzeros
+                .iter() 
+                .filter(|&&(freq_idx, _)| freq_idx < proc_bins) 
+                .fold(0.0, |acc, &(freq_idx, weight)| {
+                    acc + proc_spec[(frame_idx, freq_idx)] * weight 
+                });
             *mel_val = sum;
-        }
+        });
     });
     mel_spec
 }

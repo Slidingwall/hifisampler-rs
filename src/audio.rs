@@ -84,12 +84,9 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
         };
         sample_buf.copy_interleaved_ref(decoded);
         let samples = sample_buf.samples();
-        match channels {
-            1 => audio.extend_from_slice(samples),
-            _ => audio.extend(samples.chunks(channels).map(|frame| {
-                frame.iter().sum::<f32>() / channels_f32
-            })),
-        }
+        channels.eq(&1)
+            .then(|| audio.extend_from_slice(samples))
+            .unwrap_or_else(|| audio.extend(samples.chunks(channels).map(|frame| frame.iter().sum::<f32>() / channels_f32)));
     }
     if spec.rate == SAMPLE_RATE {
         Ok(audio)

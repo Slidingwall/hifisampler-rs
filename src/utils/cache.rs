@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::{create_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 use ndarray::{Array0, Array1, Array2};
 use ndarray_npy::{read_npy, write_npy, NpzReader, NpzWriter};
@@ -10,17 +11,13 @@ use fs2::FileExt;
 use tracing::{info, warn};
 macro_rules! defer {
     ($($stmt:stmt);* $(;)?) => {
-        let _defer = {
-            struct Defer<F: FnOnce()>(Option<F>);
-            impl<F: FnOnce()> Drop for Defer<F> {
-                fn drop(&mut self) {
-                    if let Some(f) = self.0.take() {
-                        f();
-                    }
-                }
+        struct Defer<F: FnOnce()>(Option<F>);
+        impl<F: FnOnce()> Drop for Defer<F> {
+            fn drop(&mut self) {
+                self.0.take().map(|f| f()); 
             }
-            Defer(Some(|| { $($stmt);* }))
-        };
+        }
+        let _defer = Defer(Some(|| { $($stmt);* }));
     };
 }
 #[derive(Debug, Clone)]
@@ -60,14 +57,13 @@ impl CrossProcessLockManager {
         let lock_file = self.get_lock_file(path);
         let start = Instant::now();
         loop {
-            match (&*lock_file).try_lock_exclusive() {
-                Ok(()) => return,
-                Err(_) => {
-                    if start.elapsed() >= timeout {
-                        panic!("Acquire exclusive lock timeout ({}ms): {:?}", timeout.as_millis(), path);
-                    }
-                    std::thread::sleep(Duration::from_millis(10));
-                }
+            if let Ok(()) = (&*lock_file).try_lock_exclusive() {
+                return;
+            }
+            if start.elapsed() >= timeout {
+                panic!("Acquire exclusive lock timeout ({}ms): {:?}", timeout.as_millis(), path);
+            } else {
+                thread::sleep(Duration::from_millis(10));
             }
         }
     }
@@ -94,20 +90,12 @@ impl CacheManager {
         defer! {
             self.lock_manager.release(path);
         }
-        let file = match File::open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                warn!("Open cache {} failed: {}", path.display(), e);
-                return None;
-            }
-        };
-        let mut reader = match NpzReader::new(file) {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("Read NPZ {} failed: {}", path.display(), e);
-                return None;
-            }
-        };
+        let file = File::open(path)
+        .map_err(|e| warn!("Open cache {} failed: {}", path.display(), e))
+        .ok()?;
+        let mut reader = NpzReader::new(file)
+        .map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e))
+        .ok()?;
         let scale_arr: Array0<f32> = reader.by_name("scale").unwrap();
         let mel_origin = reader.by_name("mel_origin").unwrap();
         info!("Cache loaded: {}", path.display());

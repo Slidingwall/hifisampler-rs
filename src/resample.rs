@@ -120,17 +120,14 @@ impl Resampler {
         let wave_max = wave.iter()
             .map(|&x| x.abs())
             .fold(0.0, f32::max);
-        let scale = match wave_max >= 0.5 {
-            true => {
-                info!("Scaling audio to max 0.5 (current: {:.3})", wave_max);
-                let s = 0.5 / wave_max;
-                wave.iter_mut().for_each(|x| *x *= s);
-                s
-            }
-            false => {
-                info!("Audio volume acceptable (max: {:.3})", wave_max);
-                1.0
-            }
+        let scale = if wave_max >= 0.5 {
+            info!("Scaling audio to max 0.5 (current: {:.3})", wave_max);
+            let s = 0.5 / wave_max;
+            wave.iter_mut().for_each(|x| *x *= s);
+            s 
+        } else {
+            info!("Audio volume acceptable (max: {:.3})", wave_max);
+            1.0 
         };
         let mut mel_origin = mel(
             &mut wave, 
@@ -242,13 +239,12 @@ impl Resampler {
             info!("Vocoder output length: {}", wav_con.len());
             let start_idx= ((start_idx * SR).floor() as usize).clamp(0, wav_con.len());
             let end_idx = ((end_idx * SR).floor() as usize).clamp(start_idx, wav_con.len());
-            match start_idx < end_idx {
-                true => {
-                    wav_con.truncate(end_idx);
-                    wav_con.drain(0..start_idx);
-                    wav_con
-                }
-                false => Vec::new(),
+            if start_idx < end_idx {
+                wav_con.truncate(end_idx);
+                wav_con.drain(0..start_idx);
+                wav_con
+            } else {
+                Vec::new()
             }
         };
         let render_len = render.len();
@@ -257,14 +253,16 @@ impl Resampler {
             info!("Applying amplitude modulation (A={:.1})", a_flag);
             let a_new = 1e-4 * a_flag.clamp(-100.0, 100.0);
             let mut gain_data = Array2::zeros((1, pitch_render.len()));
-            for i in 0..pitch_render.len() {
-                let grad = match i {
-                    0 => (pitch_render[1] - pitch_render[0]) / (t[1] - t[0] + 1e-9),
-                    i if i == pitch_render.len() - 1 => (pitch_render[i] - pitch_render[i-1]) / (t[i] - t[i-1] + 1e-9),
-                    _ => (pitch_render[i+1] - pitch_render[i-1]) / (t[i+1] - t[i-1] + 1e-9),
+            (0..pitch_render.len()).for_each(|i| {
+                let grad = if i == 0 {
+                    (pitch_render[1] - pitch_render[0]) / (t[1] - t[0] + 1e-9)
+                } else if i == pitch_render.len() - 1 {
+                    (pitch_render[i] - pitch_render[i-1]) / (t[i] - t[i-1] + 1e-9)
+                } else {
+                    (pitch_render[i+1] - pitch_render[i-1]) / (t[i+1] - t[i-1] + 1e-9)
                 };
                 gain_data[(0, i)] = 5.0f32.powf(a_new * grad);
-            }
+            });
             let time_step = (end_idx - start_idx) / render_len as f32;
             let audio_time: Vec<f32> = (0..render_len)
                 .map(|i| start_idx + time_step * i as f32)

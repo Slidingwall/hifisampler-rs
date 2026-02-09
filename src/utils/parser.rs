@@ -64,29 +64,13 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
     if let Ok(v) = arg.parse::<i32>() {
         return Ok(v);
     }
-    let (note_part, octave_part) = match arg.char_indices().nth(1) {
-        Some((_, c)) => {
-            if c == '#' {
-                (&arg[0..2], &arg[2..])
-            } else {
-                (&arg[0..1], &arg[1..])
-            }
-        }
-        None => return Err(anyhow!("Invalid pitch format")),
-    };
+    let (note_part, octave_part) = arg.char_indices().nth(1)
+        .map(|(_, c)| if c == '#' { (&arg[0..2], &arg[2..]) } else { (&arg[0..1], &arg[1..]) })
+        .ok_or_else(|| anyhow!("Invalid pitch format"))?;
     let note_val = match note_part {
-        "C" => 0,
-        "C#" => 1,
-        "D" => 2,
-        "D#" => 3,
-        "E" => 4,
-        "F" => 5,
-        "F#" => 6,
-        "G" => 7,
-        "G#" => 8,
-        "A" => 9,
-        "A#" => 10,
-        "B" => 11,
+        "C" => 0, "C#" => 1, "D" => 2, "D#" => 3, "E" => 4,
+        "F" => 5, "F#" => 6, "G" => 7, "G#" => 8, "A" => 9,
+        "A#" => 10, "B" => 11,
         _ => return Err(anyhow!("Invalid note")),
     };
     let octave = octave_part.parse::<i32>()? + 1;
@@ -95,11 +79,12 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
 pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f32>>> {
     let input = s.replace('/', "");
     let mut flags = HashMap::new();
-    for cap in FLAG_REGEX.captures_iter(&input) {
+    FLAG_REGEX.captures_iter(&input)
+    .for_each(|cap| {
         let flag = cap.get(1).unwrap().as_str().to_string();
         let value = cap.get(2).map(|m| m.as_str().parse::<f32>().ok()).flatten();
-        flags.insert(flag, value); 
-    }
+        flags.insert(flag, value);
+    });
     Ok(flags)
 }
 #[cfg(test)]

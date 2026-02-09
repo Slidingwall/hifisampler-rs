@@ -25,24 +25,24 @@ pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
     let (y_col0, y_col_e) = (y.column(0), y.column(x.len() - 1));
     let (x_first, x_last) = (x[0] + EPSILON, *x.last().unwrap() - EPSILON);
     azip!((mut res_col in res.axis_iter_mut(Axis(1)), &xi_val in xi) {
-        match xi_val {
-            val if val >= x_last => res_col.assign(&y_col_e),
-            val if val <= x_first => res_col.assign(&y_col0),
-            val => {
-                let idx = x.binary_search_by(|&p| p.partial_cmp(&val).unwrap_or(Ordering::Greater))
-                    .map_err(|i| i.saturating_sub(1))
-                    .unwrap()
-                    .clamp(0, x.len() - 2);
-                
-                let dx = x[idx + 1] - x[idx];
-                let t = if dx.abs() < EPSILON { 0.0 } else { (val - x[idx]) / dx };
-                
-                let y0_col = y.column(idx);
-                let y1_col = y.column(idx + 1);
-                azip!((res in &mut res_col, &y0 in &y0_col, &y1 in &y1_col) {
-                    *res = lerp(y0, y1, t);
-                });
-            }
+        if xi_val >= x_last {
+            res_col.assign(&y_col_e); 
+        } else if xi_val <= x_first {
+            res_col.assign(&y_col0); 
+        } else {
+            let idx = x.binary_search_by(|&p| p.partial_cmp(&xi_val).unwrap_or(Ordering::Greater))
+                .map_err(|i| i.saturating_sub(1))
+                .unwrap()
+                .clamp(0, x.len() - 2);
+            
+            let dx = x[idx + 1] - x[idx];
+            let t = if dx.abs() < EPSILON { 0.0 } else { (xi_val - x[idx]) / dx };
+            
+            let y0_col = y.column(idx);
+            let y1_col = y.column(idx + 1);
+            azip!((res in &mut res_col, &y0 in &y0_col, &y1 in &y1_col) {
+                *res = lerp(y0, y1, t);
+            });
         }
     });
     res
@@ -71,24 +71,24 @@ pub fn reflect_pad_1d(s: &mut Vec<f32>, left: usize, right: usize) {
     s.reserve(left + right);
     s.resize(left + len + right, 0.0);
     s.copy_within(0..len, left);
-    for i in 0..left {
+    (0..left).for_each(|i| {
         let m_idx = 1 + (i % len_1);
         s[i] = s[left + m_idx];
-    }
-    for i in 0..right {
+    });
+    (0..right).for_each(|i| {
         let m_idx = len_2 - (i % len_1);
         s[left + len + i] = s[left + m_idx];
-    }
+    });
 }
 #[cfg(test)]
 #[inline]
 pub fn linspace(start: f32, end: f32, n: usize) -> Vec<f32> {
-    match n {
-        0 => Vec::new(),
-        1 => vec![start],
-        _ => {
-            let step = (end - start) / (n - 1) as f32;
-            (0..n).map(|i| start + step * i as f32).collect()
-        }
+    if n == 0 {
+        Vec::new()
+    } else if n == 1 {
+        vec![start]
+    } else {
+        let step = (end - start) / (n - 1) as f32;
+        (0..n).map(|i| start + step * i as f32).collect()
     }
 }

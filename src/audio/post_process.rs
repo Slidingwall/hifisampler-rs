@@ -49,21 +49,19 @@ fn rms_db(audio: &[f32]) -> f32 {
         .map(|&x| x * x)
         .sum();
     let rms = (sum_sq / audio.len() as f32).sqrt();
-    match rms < 1e-10 {
-        true => f32::NEG_INFINITY,
-        false => 20.0 * rms.log10(),
-    }
+    if rms < 1e-10 { f32::NEG_INFINITY } else { 20.0 * rms.log10() }
 }
 fn linear_fade(length: usize, fade_in: bool, sample_rate: f32) -> Vec<f32> {
     let fade_len = ((0.2 * sample_rate) as usize).min(length / 4);
     let fade_dnm = 1. / (fade_len - 1).max(1) as f32;
     let fade_out = length - fade_len;
     (0..length)
-        .map(|i| match fade_in {
-            true => if i < fade_len { i as f32 * fade_dnm } else { 1.0 },
-            false => if i >= fade_out { (i - fade_out) as f32 * fade_dnm } else { 1.0 },
-        })
-        .collect()
+        .map(|i| 
+            if fade_in { 
+                if i < fade_len { i as f32 * fade_dnm } else { 1.0 }
+            } else { 
+                if i >= fade_out { (i - fade_out) as f32 * fade_dnm } else { 1.0 }
+        }).collect()
 }
 pub fn loudness_norm(
     wave: &mut Vec<f32>,
@@ -76,32 +74,27 @@ pub fn loudness_norm(
         return;
     }
     let min_len = (0.4 * sample_rate) as usize;
-    let (val_start, val_end, need_restore) = if HIFI_CONFIG.trim_silence {
+    let (mut val_start, mut val_end, mut need_restore) = (0, orig_len, false);
+    if HIFI_CONFIG.trim_silence {
         let frame_len = (0.02 * sample_rate) as usize;
         let hop_len = (0.01 * sample_rate) as usize;
-        if frame_len > orig_len {
-            (0, orig_len, false)
-        } else {
+        if frame_len <= orig_len {
             let mut start = None;
             let mut end = 0;
             let max_i = orig_len.saturating_sub(frame_len);
-            for i in (0..=max_i).step_by(hop_len) {
-                if rms_db(&wave[i..i + frame_len]) > HIFI_CONFIG.silence_threshold {
+            (0..=max_i).step_by(hop_len)
+                .filter(|&i| rms_db(&wave[i..i + frame_len]) > HIFI_CONFIG.silence_threshold)
+                .for_each(|i| {
                     start.get_or_insert(i);
                     end = i;
-                }
-            }
-            match start {
-                Some(s) => {
-                    (s, ((end / hop_len + 11) * hop_len + frame_len)
-                        .min(orig_len), true)
-                }
-                None => (0, orig_len, false),
+                });
+            if let Some(s) = start {
+                val_start = s;
+                val_end = ((end / hop_len + 11) * hop_len + frame_len).min(orig_len);
+                need_restore = true;
             }
         }
-    } else {
-        (0, orig_len, false)
-    };
+    }
     let val_len = val_end - val_start;
     if val_len == 0 {
         return;
@@ -115,21 +108,16 @@ pub fn loudness_norm(
             .iter()
             .copied()
     );
-    let measure = gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs() as f32;
-    let gain = 10.0f32.powf((target - measure) * norm_strength as f32 * 0.0005);
-    wave[val_start..val_end]
-        .iter_mut()
-        .for_each(|x| *x *= gain);
+    let gain = 10.0f32.powf((target - gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs()) * norm_strength as f32 * 0.0005);
+    wave[val_start..val_end].iter_mut().for_each(|x| *x *= gain);
     if need_restore {
         wave[0..val_start].iter_mut().for_each(|x| *x = 0.0);
         wave[val_end..orig_len].iter_mut().for_each(|x| *x = 0.0);
-        let fade_out = linear_fade(val_len, false, sample_rate);
         wave[val_start..val_end]
             .iter_mut()
-            .zip(fade_out.iter())
+            .zip(linear_fade(val_len, false, sample_rate).iter())
             .for_each(|(w, f)| *w *= f);
     }
     wave.truncate(orig_len);
-    wave.iter_mut()
-    .for_each(|x| *x = x.clamp(-1.0, 1.0));
+    wave.iter_mut().for_each(|x| *x = x.clamp(-1.0, 1.0));
 }

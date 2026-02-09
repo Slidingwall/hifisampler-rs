@@ -8,10 +8,10 @@ pub static VOCODER: OnceCell<Arc<Mutex<HiFiGANLoader>>> = OnceCell::new();
 pub static REMOVER: OnceCell<Arc<Mutex<HNSEPLoader>>> = OnceCell::new();
 pub fn initialize_models() {
     if !HIFI_CONFIG.vocoder_path.exists() {
-        panic!("HiFiGAN model not found at: {}", HIFI_CONFIG.vocoder_path.display());
+        tracing::error!("HiFiGAN model not found at: {}", HIFI_CONFIG.vocoder_path.display());
     }
     if !HIFI_CONFIG.hnsep_path.exists() {
-        panic!("HNSEP model not found at: {}", HIFI_CONFIG.hnsep_path.display());
+        tracing::error!("HNSEP model not found at: {}", HIFI_CONFIG.hnsep_path.display());
     }
     let hifigan = Arc::new(Mutex::new(HiFiGANLoader::new(&HIFI_CONFIG.vocoder_path)));
     VOCODER.set(hifigan).unwrap();

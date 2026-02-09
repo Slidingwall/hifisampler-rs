@@ -44,31 +44,24 @@ fn highpass(
     (high, low)
 }
 fn square_lfo(num: usize, sr: f32, freq: f32) -> Vec<f32> {
-    let mut lfo = Vec::with_capacity(num);
     let samples = (sr / freq) as usize;
     let half_samples = samples / 2;
-    for n in 0..num {
-        if (n % samples) < half_samples {
-            lfo.push(1.0);
-        } else {
-            lfo.push(-1.0);
-        }
-    }
-    lfo
+    (0..num)
+        .map(|n| if (n % samples) < half_samples { 1.0 } else { -1.0 })
+        .collect()
 }
 fn linear_interp(idx: &[f32], x: &[f32]) -> Vec<f32> {
-    let mut output = Vec::with_capacity(idx.len());
     let max_idx = x.len() - 1;
-    for &i in idx {
-        let floor_idx = i.floor() as usize;
-        let val = if floor_idx >= max_idx {
-            x[max_idx]
-        } else {
-            lerp(x[floor_idx], x[floor_idx + 1], i.fract())
-        };
-        output.push(val);
-    }
-    output
+    idx.iter()
+        .map(|&i| {
+            let floor_idx = i.floor() as usize;
+            if floor_idx >= max_idx {
+                x[max_idx]
+            } else {
+                lerp(x[floor_idx], x[floor_idx + 1], i.fract())
+            }
+        })
+        .collect()
 }
 #[inline]
 fn rms(data: &[f32]) -> f32 {
@@ -89,15 +82,17 @@ fn apply_pitch_modulation(
     let mean_ratio = buf.iter().sum::<f32>() / band_len as f32;
     let ratio_0 = buf[0];
     let mut cumulative = 0.0;
-    for (i, val) in buf.iter_mut().enumerate() {
-        cumulative += *val;
-        *val = (cumulative - ratio_0) - (i as f32) * mean_ratio;
-    }
+    buf.iter_mut().enumerate()
+        .for_each(|(i, val)| {
+            cumulative += *val;
+            *val = (cumulative - ratio_0) - (i as f32) * mean_ratio;
+        });
     highpass_2nd(&mut buf, sr, HP_CUTOFF_HZ);
     let max_idx =(band_len - 1) as f32;
-    for (i, val) in buf.iter_mut().enumerate() {
-        *val = (i as f32 + *val).clamp(0.0, max_idx);
-    }
+    buf.iter_mut().enumerate()
+        .for_each(|(i, val)| {
+            *val = (i as f32 + *val).clamp(0.0, max_idx);
+        });
     let mut modulated = linear_interp(&buf, band);
     let gain = rms(band) / rms(&modulated);
     modulated.iter_mut().for_each(|m| *m *= gain);

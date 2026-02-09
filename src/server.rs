@@ -51,18 +51,15 @@ async fn handle_post(State(state): State<AppState>, body: String) -> (StatusCode
         let _permit = permit;
         Resampler::new(args)
     }).await.unwrap();
-    match task_result {
-        Ok(()) => {
-            info!("Processing {} successful.", note_info);
-            (StatusCode::OK, format!("Success: {}", note_info))
-        }
-        Err(e) => {
-            error!("Processing {} failed: {}", note_info, e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Error processing: Internal error.".to_string()
-            )
-        }
+    if let Ok(()) = task_result {
+        info!("Processing {} successful.", note_info);
+        (StatusCode::OK, format!("Success: {}", note_info))
+    } else {
+        error!("Processing {} failed: {}", note_info, task_result.unwrap_err());
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Error processing: Internal error.".to_string()
+        )
     }
 }
 pub async fn run(port: u16, max_workers: usize) {
