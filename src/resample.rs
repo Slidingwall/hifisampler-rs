@@ -129,12 +129,9 @@ impl Resampler {
             info!("Audio volume acceptable (max: {:.3})", wave_max);
             1.0 
         };
-        let mut mel_origin = mel(
-            &mut wave, 
-            self.flags.get("g").and_then(|o| o.as_ref()).copied().unwrap().clamp(-600., 600.) / 100., 
-            1.
-        );
-        info!("Mel shape: {:?}", mel_origin.dim());
+        let gender = self.flags.get("g").and_then(|o| o.as_ref()).copied().unwrap().clamp(-600., 600.);
+        let mut mel_origin = mel( &mut wave, gender / 100., 1.);
+        info!("Gender adjustment: {}, Mel shape: {:?}", gender, mel_origin.dim());
         dynamic_range_compression(&mut mel_origin);
         Ok(Features { mel_origin, scale })
     }
@@ -150,7 +147,7 @@ impl Resampler {
         );
         let mel_cols = mel_origin.ncols();
         let mut t_origin: Vec<f32> = (0..mel_cols)
-            .map(|i| i as f32 * THOP_ORIGIN + THOP_ORIGIN_HALF)
+            .map(|i| (i as f32 + 0.5) * THOP_ORIGIN)
             .collect();
         let mut t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
         let vel = (1.0 - self.velocity).exp2();
@@ -166,15 +163,15 @@ impl Resampler {
         );
         if HIFI_CONFIG.loop_mode || self.flags.contains_key("He") {
             info!("Enabling loop mode");
-            let start_idx = (((con + THOP_ORIGIN_HALF) / THOP_ORIGIN).floor() as usize).clamp(0, mel_cols);
-            let end_idx = (((end + THOP_ORIGIN_HALF) / THOP_ORIGIN).floor() as usize).clamp(start_idx, mel_cols);
+            let start_idx = ((con / THOP_ORIGIN + 0.5).floor() as usize).clamp(0, mel_cols);
+            let end_idx = ((end / THOP_ORIGIN + 0.5 ).floor() as usize).clamp(start_idx, mel_cols);
             let mel_loop = mel_origin.slice(s![.., start_idx..end_idx]);
             let pad_size = (length_req / THOP_ORIGIN).floor() as usize + 1;
             let padded_mel = reflect_pad_2d(mel_loop, pad_size);
             *mel_origin = concatenate![Axis(1), mel_origin.slice(s![.., 0..start_idx]), padded_mel];
             stretch_len = pad_size as f32 * THOP_ORIGIN;
             t_origin.clear();
-            t_origin.extend((0..mel_origin.ncols()).map(|i| i as f32 * THOP_ORIGIN + THOP_ORIGIN_HALF));
+            t_origin.extend((0..mel_origin.ncols()).map(|i| (i as f32 + 0.5) * THOP_ORIGIN ));
             t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
             info!("Looped mel shape: {:?}, new total time: {:.4}", mel_origin.dim(), t_total);
         }
@@ -216,8 +213,8 @@ impl Resampler {
                     .map_or(base, |&t| base + t.clamp(-1200., 1200.) / 100.0)
             })
             .collect();
-        let start_idx = self.offset * vel - slice_start as f32;
-        let end_idx = (con * vel + length_req) - slice_start as f32;
+        let start_idx = self.offset * vel - slice_start as f32 * THOP;
+        let end_idx = (con * vel + length_req) - slice_start as f32 * THOP;
         let t: Vec<f32> = (0..mel_render.ncols())
             .map(|i| i as f32 * THOP)
             .collect();

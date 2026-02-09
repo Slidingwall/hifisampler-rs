@@ -31,8 +31,7 @@ pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
             res_col.assign(&y_col0); 
         } else {
             let idx = x.binary_search_by(|&p| p.partial_cmp(&xi_val).unwrap_or(Ordering::Greater))
-                .map_err(|i| i.saturating_sub(1))
-                .unwrap()
+                .unwrap_or_else(|i| i.saturating_sub(1))
                 .clamp(0, x.len() - 2);
             
             let dx = x[idx + 1] - x[idx];
