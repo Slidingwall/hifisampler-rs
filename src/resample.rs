@@ -149,7 +149,7 @@ impl Resampler {
             self.modulation, features.scale, mel_origin.dim()
         );
         let mel_cols = mel_origin.ncols();
-        let t_origin: Vec<f32> = (0..mel_cols)
+        let mut t_origin: Vec<f32> = (0..mel_cols)
             .map(|i| i as f32 * THOP_ORIGIN + THOP_ORIGIN_HALF)
             .collect();
         let mut t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
@@ -173,9 +173,8 @@ impl Resampler {
             let padded_mel = reflect_pad_2d(mel_loop, pad_size);
             *mel_origin = concatenate![Axis(1), mel_origin.slice(s![.., 0..start_idx]), padded_mel];
             stretch_len = pad_size as f32 * THOP_ORIGIN;
-            let t_origin: Vec<f32> = (0..mel_origin.ncols())
-                .map(|i| i as f32 * THOP_ORIGIN + THOP_ORIGIN_HALF)
-                .collect();
+            t_origin.clear();
+            t_origin.extend((0..mel_origin.ncols()).map(|i| i as f32 * THOP_ORIGIN + THOP_ORIGIN_HALF));
             t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
             info!("Looped mel shape: {:?}, new total time: {:.4}", mel_origin.dim(), t_total);
         }

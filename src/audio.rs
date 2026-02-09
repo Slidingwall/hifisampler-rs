@@ -2,6 +2,7 @@ pub mod post_process;
 use crate::consts::SAMPLE_RATE;
 use anyhow::{anyhow, Result};
 use hound::{SampleFormat, WavSpec, WavWriter};
+use once_cell::sync::Lazy;
 use rubato::{Resampler, SincFixedIn, WindowFunction, SincInterpolationParameters, SincInterpolationType};
 use std::{fs::File, path::{Path, PathBuf}};
 use symphonia::{
@@ -13,6 +14,9 @@ use symphonia::{
     default::{get_codecs, get_probe},
 };
 const I16_MAX: f32 = i16::MAX as f32;
+static COMMON_EXTENSIONS: Lazy<Vec<&str>> = Lazy::new(|| {
+    vec!["wav", "flac", "ogg", "mp3", "aac"]
+});
 fn resample_audio(audio: &[f32], in_sr: u32, out_sr: u32) -> Result<Vec<f32>> {
     let ratio = out_sr as f64 / in_sr as f64; // Due to rubato's API, we need to use f64 for the ratio
     let mut res = Vec::with_capacity((audio.len() as f64 * ratio).ceil() as usize);
@@ -29,9 +33,10 @@ fn resample_audio(audio: &[f32], in_sr: u32, out_sr: u32) -> Result<Vec<f32>> {
         256,
         1,
     )?;
+    let mut input = Vec::with_capacity(256);
     for chunk in audio.chunks(256) {
-        let mut input = Vec::from(chunk);
-        input.resize(256, 0.0);
+        input.clear();
+        input.extend_from_slice(chunk);
         let proc_res = resampler.process(&[&input], None)?;
         let output = proc_res.get(0).unwrap();
         res.extend_from_slice(output);
@@ -44,15 +49,14 @@ fn resample_audio(audio: &[f32], in_sr: u32, out_sr: u32) -> Result<Vec<f32>> {
 pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
     let mut path = PathBuf::from(path.as_ref());
     if !path.exists() {
-        let common_extensions = ["wav", "flac", "ogg", "mp3", "aac"];
-        let found = common_extensions.iter().find(|&&ext| {
+        let found = COMMON_EXTENSIONS.iter().find(|&&ext| {
             path.set_extension(ext);
             path.exists()
         });
         if found.is_none() {
             return Err(anyhow!(
                 "No supported audio file found (tried extensions: {:?})",
-                common_extensions
+                COMMON_EXTENSIONS
             ));
         }
     }

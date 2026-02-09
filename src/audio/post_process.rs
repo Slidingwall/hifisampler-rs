@@ -1,5 +1,5 @@
 use bs1770::{ChannelLoudnessMeter, gated_mean};
-use ndarray::{Array2, Axis, azip};
+use ndarray::{Axis, azip};
 use oxifft::Complex;
 use crate::{
     consts::{FFT_SIZE, HOP_SIZE, HIFI_CONFIG, SAMPLE_RATE},
@@ -13,27 +13,20 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f32>, b: f32) {
         .unwrap_or(1.0); 
     let padded_len = ((orig_len + HOP_SIZE - 1) / HOP_SIZE) * HOP_SIZE;
     wave.resize(padded_len, 0.0);
-    let comp_spec = stft_core(&*wave, FFT_SIZE, HOP_SIZE);
-    let mut spec_amp = Array2::zeros(comp_spec.dim());
-    let mut spec_phase = Array2::zeros(comp_spec.dim());
-    azip!((amp_val in &mut spec_amp, phase_val in &mut spec_phase, &c in &comp_spec) {
-        *amp_val = c.norm();
-        *phase_val = c.arg();
-    });
+    let mut comp_spec = stft_core(&*wave, FFT_SIZE, HOP_SIZE);
     let fft_dnm = 1. / (FFT_SIZE / 1500 + 3000) as f32;
-    spec_amp.mapv_inplace(|x| x.max(1e-9).ln());
+    let mut spec_amp = comp_spec.mapv(|c| c.norm().max(1e-9).ln());
     spec_amp.axis_iter_mut(Axis(0))
         .enumerate()
         .for_each(|(j, mut bin)| {
             let filter = (b * (1.0 - (SAMPLE_RATE as f32 * j as f32) * fft_dnm)).clamp(-2.0, 2.0);
             bin.iter_mut().for_each(|amp_db| *amp_db += filter);
         });
-    let mut comp_spec_istft = Array2::from_elem((FFT_SIZE / 2 + 1, comp_spec.ncols()), Complex::zero());
-    azip!((comp_val in &mut comp_spec_istft, &phase in &spec_phase, &amp_db in &spec_amp) {
-        let amp = amp_db.exp(); 
-        *comp_val = Complex::new(amp * phase.cos(), amp * phase.sin());
+    azip!((comp_val in &mut comp_spec, &amp_db in &spec_amp) {
+        let (amp, phase) = (amp_db.exp(), comp_val.arg()); 
+        *comp_val = Complex::new(amp * phase.cos(), amp * phase.sin()); 
     });
-    let mut filtered_wave = istft_core(&comp_spec_istft, wave.len(), FFT_SIZE, HOP_SIZE);
+    let mut filtered_wave = istft_core(&comp_spec, wave.len(), FFT_SIZE, HOP_SIZE);
     let filtered_max = filtered_wave.iter()
         .map(|x| x.abs())
         .max_by(|a, b| a.total_cmp(b))
@@ -103,11 +96,7 @@ pub fn loudness_norm(
         reflect_pad_1d(wave, 0, min_len - val_len);
     }
     let mut meter = ChannelLoudnessMeter::new(sample_rate as u32);
-    meter.push(
-        wave[val_start..(val_start + min_len.max(val_len)).min(wave.len())]
-            .iter()
-            .copied()
-    );
+    meter.push(wave[val_start..(val_start + min_len.max(val_len)).min(wave.len())].iter().copied());
     let gain = 10.0f32.powf((target - gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs()) * norm_strength as f32 * 0.0005);
     wave[val_start..val_end].iter_mut().for_each(|x| *x *= gain);
     if need_restore {
