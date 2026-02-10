@@ -17,12 +17,7 @@ fn forward_backward_filter<F: Biquad<f32>>(
 }
 #[inline]
 fn create_highpass_coeffs(sr: f32, cutoff: f32) -> biquad::Coefficients<f32> {
-    Coefficients::<f32>::from_params(
-        biquad::Type::HighPass,
-        sr.hz(),
-        cutoff.hz(),
-        Q_HIGHPASS,
-    )
+    Coefficients::<f32>::from_params(biquad::Type::HighPass,sr.hz(),cutoff.hz(),Q_HIGHPASS)
     .expect("Failed to create highpass coefficients: invalid sample rate or cutoff frequency")
 }
 fn highpass_2nd(audio: &mut [f32], sr: f32, cutoff: f32) {
@@ -37,18 +32,13 @@ fn highpass(
     let mut high = audio.to_vec(); 
     let mut filter = DirectForm1::new(create_highpass_coeffs(sr, cutoff));
     forward_backward_filter(&mut high, &mut filter, 2);
-    let low = audio.iter()
-        .zip(high.iter())
-        .map(|(a, h)| a - h)
-        .collect::<Vec<f32>>();
+    let low = audio.iter().zip(high.iter()).map(|(a, h)| a - h).collect::<Vec<f32>>();
     (high, low)
 }
 fn square_lfo(num: usize, sr: f32, freq: f32) -> Vec<f32> {
     let samples = (sr / freq) as usize;
     let half_samples = samples / 2;
-    (0..num)
-        .map(|n| if (n % samples) < half_samples { 1.0 } else { -1.0 })
-        .collect()
+    (0..num).map(|n| if (n % samples) < half_samples { 1.0 } else { -1.0 }).collect()
 }
 fn linear_interp(idx: &[f32], x: &[f32]) -> Vec<f32> {
     let max_idx = x.len() - 1;
@@ -76,23 +66,19 @@ fn apply_pitch_modulation(
 ) -> Vec<f32> {
     let band_len = band.len();
     let vibrato = strength * VIBRATO_FACTOR;
-    let mut buf = lfo.iter()
-        .map(|&l| 2.0f32.powf(l * vibrato))
-        .collect::<Vec<f32>>(); 
+    let mut buf = lfo.iter().map(|&l| 2.0f32.powf(l * vibrato)).collect::<Vec<f32>>(); 
     let mean_ratio = buf.iter().sum::<f32>() / band_len as f32;
     let ratio_0 = buf[0];
     let mut cumulative = 0.0;
-    buf.iter_mut().enumerate()
-        .for_each(|(i, val)| {
-            cumulative += *val;
-            *val = (cumulative - ratio_0) - (i as f32) * mean_ratio;
-        });
+    buf.iter_mut().enumerate().for_each(|(i, val)| {
+        cumulative += *val;
+        *val = (cumulative - ratio_0) - (i as f32) * mean_ratio;
+    });
     highpass_2nd(&mut buf, sr, HP_CUTOFF_HZ);
     let max_idx =(band_len - 1) as f32;
-    buf.iter_mut().enumerate()
-        .for_each(|(i, val)| {
-            *val = (i as f32 + *val).clamp(0.0, max_idx);
-        });
+    buf.iter_mut().enumerate().for_each(|(i, val)| {
+        *val = (i as f32 + *val).clamp(0.0, max_idx);
+    });
     let mut modulated = linear_interp(&buf, band);
     let gain = rms(band) / rms(&modulated);
     modulated.iter_mut().for_each(|m| *m *= gain);
@@ -110,14 +96,7 @@ pub fn growl(
     }
     let orig_audio = std::mem::take(audio);
     let (high, mut complement) = highpass(&orig_audio, sr, 400.0);
-    let mod_band = apply_pitch_modulation(
-        &high,
-        sr,
-        &square_lfo(orig_len, sr, freq),
-        strength,
-    );
-    complement.iter_mut()
-        .zip(mod_band.iter())
-        .for_each(|(c, m)| *c += m);
+    let mod_band = apply_pitch_modulation(&high,sr,&square_lfo(orig_len, sr, freq),strength);
+    complement.iter_mut().zip(mod_band.iter()).for_each(|(c, m)| *c += m);
     *audio = complement;
 }

@@ -12,13 +12,8 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 fn init_logging() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing::level_filters::LevelFilter::INFO)
-        .with(fmt::layer()
-            .without_time() 
-            .with_target(false) 
-            .with_thread_names(false)) 
-        .init();
+    tracing_subscriber::registry().with(tracing::level_filters::LevelFilter::INFO)
+        .with(fmt::layer().without_time().with_target(false) .with_thread_names(false)).init();
     Ok(())
 }
 #[tokio::main]

@@ -53,14 +53,12 @@ impl Resampler {
         self.resample(&mut features)
     }
     fn get_features(&mut self) -> Result<Features> {
-        [("Hb", 100.), ("Hv", 100.), ("Ht", 0.), ("g", 0.)]
-            .iter()
+        [("Hb", 100.), ("Hv", 100.), ("Ht", 0.), ("g", 0.)].iter()
             .for_each(|(k, v)| { self.flags.entry(k.to_string()).or_insert(Some(*v)); });
         let flag_suf = self.flags.iter()
             .filter(|(k, _)| ["Hb", "Hv", "Ht", "g"].contains(&k.as_str()))
             .map(|(k, v)| format!("{}{}", k, v.as_ref().unwrap())) 
-            .collect::<Vec<_>>()
-            .join("_");
+            .collect::<Vec<_>>().join("_");
         let stem = self.in_file.file_stem().unwrap().to_str().unwrap();
         let cache_name = format!("{}_{}{}", stem, flag_suf, FEATURE_EXT);
         let features_path = self.in_file.with_file_name(cache_name);
@@ -97,18 +95,14 @@ impl Resampler {
             };
             if tension != 0. {
                 let mut voicing_seg = seg_output.iter()
-                    .map(|&s| voicing_scale * s)
-                    .collect::<Vec<f32>>();
+                    .map(|&s| voicing_scale * s).collect::<Vec<f32>>();
                 pre_emphasis_base_tension(&mut voicing_seg, -tension.clamp(-100., 100.) / 50.);
-                wave.iter_mut()
-                    .zip(seg_output.iter())
-                    .zip(voicing_seg.iter())
+                wave.iter_mut().zip(seg_output.iter()).zip(voicing_seg.iter())
                     .for_each(|((w, &s), &em)| {
                         *w = bre_scale * (*w - s) + em;
                     });
             } else {
-                wave.iter_mut()
-                    .zip(seg_output.iter())
+                wave.iter_mut().zip(seg_output.iter())
                     .for_each(|(w, &s)| {
                         *w = bre_scale * (*w - s) + voicing_scale * s;
                     });
@@ -117,9 +111,7 @@ impl Resampler {
             info!("Applying simple volume scaling: {}", bre / 100.); 
             wave.iter_mut().for_each(|x| *x *= bre_scale);
         }
-        let wave_max = wave.iter()
-            .map(|&x| x.abs())
-            .fold(0.0, f32::max);
+        let wave_max = wave.iter().map(|&x| x.abs()).fold(0.0, f32::max);
         let scale = if wave_max >= 0.5 {
             info!("Scaling audio to max 0.5 (current: {:.3})", wave_max);
             let s = 0.5 / wave_max;
@@ -146,9 +138,7 @@ impl Resampler {
             self.modulation, features.scale, mel_origin.dim()
         );
         let mel_cols = mel_origin.ncols();
-        let mut t_origin: Vec<f32> = (0..mel_cols)
-            .map(|i| (i as f32 + 0.5) * THOP_ORIGIN)
-            .collect();
+        let mut t_origin: Vec<f32> = (0..mel_cols).map(|i| (i as f32 + 0.5) * THOP_ORIGIN).collect();
         let mut t_total = t_origin.last().copied().unwrap() + THOP_ORIGIN_HALF;
         let vel = (1.0 - self.velocity).exp2();
         let start = self.offset;
@@ -185,16 +175,13 @@ impl Resampler {
         let stretch = |t: f32| -> f32 {
             if t < vel * con { t / vel } else { con + (t - vel * con) / scal_ratio }
         };
-        let stretched_frames = ((con * vel + (t_total - con) * scal_ratio) / THOP)
-            .floor() as usize + 1;
+        let stretched_frames = ((con * vel + (t_total - con) * scal_ratio) / THOP).floor() as usize + 1;
         let mut stretched_mel: Vec<f32> = (0..stretched_frames)
-            .map(|i| (i as f32 + 0.5) * THOP)
-            .collect();
+            .map(|i| (i as f32 + 0.5) * THOP).collect();
         let slice_start = ((start * vel / THOP + 0.5).floor() as usize)
             .saturating_sub(HIFI_CONFIG.fill);
         let slice_end = (((length_req + con * vel) / THOP + 0.5).floor() as usize)
-            .saturating_add(HIFI_CONFIG.fill)
-            .clamp(0, stretched_frames);
+            .saturating_add(HIFI_CONFIG.fill).clamp(0, stretched_frames);
         stretched_mel.truncate(slice_end);
         if slice_start > 0 {
             stretched_mel.drain(0..slice_start);
@@ -205,28 +192,18 @@ impl Resampler {
         });
         let mel_render = interp1d(&t_origin, &mel_origin, &stretched_mel);
         info!("Render mel shape: {:?}, Processing pitch...", mel_render.dim());
-        let pitch_base: Vec<f32> = self.pitchbend.iter()
-            .map(|&pb| {
-                let base = pb + self.pitch;
-                self.flags.get("t")
-                    .and_then(|o| o.as_ref())
-                    .map_or(base, |&t| base + t.clamp(-1200., 1200.) / 100.0)
-            })
-            .collect();
+        let pitch_base: Vec<f32> = self.pitchbend.iter().map(|&pb| {
+            let base = pb + self.pitch;
+            self.flags.get("t").and_then(|o| o.as_ref())
+                .map_or(base, |&t| base + t.clamp(-1200., 1200.) / 100.0)
+        }).collect();
         let start_idx = self.offset * vel - slice_start as f32 * THOP;
         let end_idx = (con * vel + length_req) - slice_start as f32 * THOP;
-        let t: Vec<f32> = (0..mel_render.ncols())
-            .map(|i| i as f32 * THOP)
-            .collect();
+        let t: Vec<f32> = (0..mel_render.ncols()).map(|i| i as f32 * THOP).collect();
         let pitch_max = mel_render.ncols() as f32 * THOP;
         let t_scale = (self.pitchbend.len() as f32 - 1.) / pitch_max;
-        let pitch_render = Akima::new(&pitch_base)
-            .sample_with_slice(&t.iter()
-                .map(|&x| x.clamp(0., pitch_max) * t_scale)
-                .collect::<Vec<_>>());
-        let f0_render: Vec<f32> = pitch_render.iter()
-            .map(|&x| midi_to_hz(x))
-            .collect();
+        let pitch_render = Akima::new(&pitch_base).sample_with_slice(&t.iter().map(|&x| x.clamp(0., pitch_max) * t_scale).collect::<Vec<_>>());
+        let f0_render: Vec<f32> = pitch_render.iter().map(|&x| midi_to_hz(x)).collect();
         info!("F0 render length: {}", f0_render.len());
         let mut render = {
             let vocoder_arc = get_vocoder();
@@ -260,29 +237,22 @@ impl Resampler {
                 gain_data[(0, i)] = 5.0f32.powf(a_new * grad);
             });
             let time_step = (end_idx - start_idx) / render_len as f32;
-            let audio_time: Vec<f32> = (0..render_len)
-                .map(|i| start_idx + time_step * i as f32)
-                .collect();
+            let audio_time: Vec<f32> = (0..render_len).map(|i| start_idx + time_step * i as f32).collect();
             render.iter_mut()
                 .zip(interp1d(&t,&gain_data,&audio_time).row(0).iter())
                 .for_each(|(r, g)| *r *= g);
             info!("Amplitude modulation applied");
         }
         render.iter_mut().for_each(|x| *x /= features.scale);
-        let max = render.iter()
-            .map(|x| x.abs())
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap();
+        let max = render.iter().map(|x| x.abs())
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)).unwrap();
         if let Some(&hg) = self.flags.get("HG").and_then(|o| o.as_ref()) {
             info!("Applying growl (strength: {:.1})", hg);
             growl(&mut render, SR, 80.0, hg.clamp(0.0, 100.0) / 100.0);
         }
         if HIFI_CONFIG.wave_norm {
-            let p_strength = self.flags.get("P")
-                .and_then(|o| o.as_ref())
-                .copied()
-                .unwrap_or(100.0)
-                .clamp(0.0, 100.0) as u8; 
+            let p_strength = self.flags.get("P").and_then(|o| o.as_ref())
+                .copied().unwrap_or(100.0).clamp(0.0, 100.0) as u8; 
             loudness_norm(&mut render, SR,  -16.0, p_strength);
         }
         if max > HIFI_CONFIG.peak_limit {

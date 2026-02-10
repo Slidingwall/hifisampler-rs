@@ -11,8 +11,7 @@ static FLAG_REGEX: Lazy<Regex> = Lazy::new(|| {
 #[inline(always)]
 fn to_uint6(c: u8) -> u8 {
     match c {
-        b'+' => 62,
-        b'/' => 63,
+        b'+' => 62, b'/' => 63,
         b'0'..=b'9' => c + 4,
         b'A'..=b'Z' => c - 65,
         b'a'..=b'z' => c - 71,
@@ -21,14 +20,10 @@ fn to_uint6(c: u8) -> u8 {
 }
 #[inline(always)]
 fn to_int12_stream<S: AsRef<str>>(b64: S) -> Vec<i16> {
-    b64.as_ref()
-        .as_bytes()
-        .chunks_exact(2) 
-        .map(|chunk| {
-            let uint12 = (to_uint6(chunk[0]) as u16) << 6 | (to_uint6(chunk[1]) as u16);
-            ((uint12 << 4) as i16) >> 4 
-        })
-        .collect()
+    b64.as_ref().as_bytes().chunks_exact(2) .map(|chunk| {
+        let uint12 = (to_uint6(chunk[0]) as u16) << 6 | (to_uint6(chunk[1]) as u16);
+        ((uint12 << 4) as i16) >> 4 
+    }).collect()
 }
 pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f32>> {
     let mut res = Vec::new();
@@ -37,11 +32,9 @@ pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f32>> {
     while idx < parts.len() - 1 {
         let stream = to_int12_stream(parts[idx]);
         res.extend(stream);
-        let rle = parts[idx+1].parse::<usize>()
-            .map_err(|e| anyhow!("Invalid RLE '{}': {}", parts[idx+1], e))?;
+        let rle = parts[idx+1].parse::<usize>().map_err(|e| anyhow!("Invalid RLE '{}': {}", parts[idx+1], e))?;
         if rle > 0 {
-            let last = res.last().copied()
-                .ok_or_else(|| anyhow!("Empty pitch stream for '{}'", parts[idx]))?;
+            let last = res.last().copied().ok_or_else(|| anyhow!("Empty pitch stream for '{}'", parts[idx]))?;
             res.extend(std::iter::repeat(last).take(rle));
         }
         idx += 2;
@@ -49,10 +42,7 @@ pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f32>> {
     if idx < parts.len() {
         res.extend(to_int12_stream(parts[idx]));
     }
-    Ok(res.into_iter()
-        .map(|x| x as f32 * 0.01)
-        .chain(std::iter::once(0.0))
-        .collect())
+    Ok(res.into_iter().map(|x| x as f32 * 0.01).chain(std::iter::once(0.0)).collect())
 }
 #[inline(always)]
 #[allow(dead_code)]
@@ -79,8 +69,7 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
 pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f32>>> {
     let input = s.replace('/', "");
     let mut flags = HashMap::new();
-    FLAG_REGEX.captures_iter(&input)
-    .for_each(|cap| {
+    FLAG_REGEX.captures_iter(&input).for_each(|cap| {
         let flag = cap.get(1).unwrap().as_str().to_string();
         let value = cap.get(2).map(|m| m.as_str().parse::<f32>().ok()).flatten();
         flags.insert(flag, value);

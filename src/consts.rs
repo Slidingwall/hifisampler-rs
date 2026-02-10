@@ -25,48 +25,27 @@ fn load_hifi_config() -> HifiConfig {
         Ok(ini) => ini,
         Err(_) => return HifiConfig::default(),
     };
-    let def_sec: HashMap<String, String> = ini
-        .section(None::<String>)
+    let def_sec: HashMap<String, String> = ini.section(None::<String>)
         .map(|props| props.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect())
         .unwrap_or_default();
     HifiConfig {
-        vocoder_path: def_sec
-            .get("vocoder_path")
-            .cloned()
-            .map(PathBuf::from)
+        vocoder_path: def_sec.get("vocoder_path").cloned().map(PathBuf::from)
             .unwrap_or(PathBuf::from("./model/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx")),
-        hnsep_path: def_sec
-            .get("hnsep_path")
-            .cloned()
-            .map(PathBuf::from)
+        hnsep_path: def_sec.get("hnsep_path").cloned().map(PathBuf::from)
             .unwrap_or(PathBuf::from("./model/hnsep_model.onnx")),
-        wave_norm: def_sec
-            .get("wave_norm")
-            .and_then(|s| s.parse().ok())
+        wave_norm: def_sec.get("wave_norm").and_then(|s| s.parse().ok())
             .unwrap_or(true),
-        trim_silence: def_sec
-            .get("trim_silence")
-            .and_then(|s| s.parse().ok())
+        trim_silence: def_sec.get("trim_silence").and_then(|s| s.parse().ok())
             .unwrap_or(true),
-        loop_mode: def_sec
-            .get("loop_mode")
-            .and_then(|s| s.parse().ok())
+        loop_mode: def_sec.get("loop_mode").and_then(|s| s.parse().ok())
             .unwrap_or(true),
-        silence_threshold: def_sec
-            .get("silence_threshold")
-            .and_then(|s| s.parse().ok())
+        silence_threshold: def_sec.get("silence_threshold").and_then(|s| s.parse().ok())
             .unwrap_or(-52.0),
-        peak_limit: def_sec
-            .get("peak_limit")
-            .and_then(|s| s.parse().ok())
+        peak_limit: def_sec.get("peak_limit").and_then(|s| s.parse().ok())
             .unwrap_or(1.0),
-        fill: def_sec
-            .get("fill")
-            .and_then(|s| s.parse().ok())
+        fill: def_sec.get("fill").and_then(|s| s.parse().ok())
             .unwrap_or(6),
-        max_workers: def_sec
-            .get("max_workers")
-            .and_then(|s| s.parse().ok())
+        max_workers: def_sec.get("max_workers").and_then(|s| s.parse().ok())
             .unwrap_or(2),
     }
 }

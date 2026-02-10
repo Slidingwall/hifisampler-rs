@@ -10,23 +10,19 @@ static ISTFT_WINDOW_SQ: Lazy<Arc<Vec<f32>>> = Lazy::new(|| {
     Arc::new(window.iter().map(|&w| w * w).collect())
 });
 fn get_hann_window(fft_size: usize) -> Arc<Vec<f32>> {
-    HANN_WINDOWS
-        .entry(fft_size)
+    HANN_WINDOWS.entry(fft_size)
         .or_insert_with(|| {
             Arc::new(WindowFunction::Hann.generate(fft_size))
-        })
-        .clone()
+        }).clone()
 }
 fn get_fft_plan(fft_size: usize, direction: Direction) -> Arc<Plan<f32>> {
-    FFT_PLANS
-        .entry((fft_size, direction))
+    FFT_PLANS.entry((fft_size, direction))
         .or_insert_with(|| {
             Arc::new(
                 Plan::dft_1d(fft_size, direction, Flags::ESTIMATE)
                     .expect(&format!("Failed to generate FFT plan for size {} and direction {:?}", fft_size, direction))
             )
-        })
-        .clone()
+        }).clone()
 }
 pub fn stft_core(
     signal: &[f32],
@@ -47,11 +43,8 @@ pub fn stft_core(
     );
     pool.parallel_for(n_frames, |frame_idx| {
         let start = frame_idx * hop_size;
-        let input: Vec<Complex<f32>> = signal[start..start + fft_size]
-            .iter()
-            .zip(window.iter())
-            .map(|(&s, &w)| Complex::new(s * w, 0.0))
-            .collect();
+        let input: Vec<Complex<f32>> = signal[start..start + fft_size].iter().zip(window.iter())
+            .map(|(&s, &w)| Complex::new(s * w, 0.0)).collect();
         let mut output = vec![Complex::zero(); fft_size];
         plan.execute(&input, &mut output);
         output.truncate(freq_bins); 
@@ -79,11 +72,7 @@ pub fn istft_core(
     let mut win_sum = vec![0.0; out_len];
     let scale = 1.0 / fft_size as f32;
     let pool = get_default_pool();
-    let result: Arc<Vec<OnceCell<Vec<f32>>>> = Arc::new(
-        (0..n_frames)
-            .map(|_| OnceCell::new())
-            .collect()
-    );
+    let result: Arc<Vec<OnceCell<Vec<f32>>>> = Arc::new((0..n_frames).map(|_| OnceCell::new()).collect());
     let max_bins = freq_bins - 1;
     pool.parallel_for(n_frames, |frame_idx| {
         let mut full_spec = vec![Complex::zero(); fft_size];
@@ -95,11 +84,8 @@ pub fn istft_core(
             full_spec[fft_size - i] = full_spec[i].conj();
         });
         plan.execute(&full_spec, &mut frame);
-        let ifft_result: Vec<f32> = frame
-            .iter()
-            .zip(window.iter())
-            .map(|(frame_val, win_val)| frame_val.re * scale * win_val)
-            .collect();
+        let ifft_result: Vec<f32> = frame.iter().zip(window.iter())
+            .map(|(frame_val, win_val)| frame_val.re * scale * win_val).collect();
         let _ = result[frame_idx].set(ifft_result);
     });
     let window_sq = ISTFT_WINDOW_SQ.as_ref();

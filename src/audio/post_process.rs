@@ -7,17 +7,14 @@ use crate::{
 };
 pub fn pre_emphasis_base_tension(wave: &mut Vec<f32>, b: f32) {
     let orig_len = wave.len();
-    let orig_max = wave.iter()
-        .map(|x| x.abs())
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap_or(1.0); 
+    let orig_max = wave.iter().map(|x| x.abs())
+        .max_by(|a, b| a.total_cmp(b)).unwrap_or(1.0); 
     let padded_len = ((orig_len + HOP_SIZE - 1) / HOP_SIZE) * HOP_SIZE;
     wave.resize(padded_len, 0.0);
     let mut comp_spec = stft_core(&*wave, FFT_SIZE, HOP_SIZE);
     let fft_dnm = 1. / (FFT_SIZE / 1500 + 3000) as f32;
     let mut spec_amp = comp_spec.mapv(|c| c.norm().max(1e-9).ln());
-    spec_amp.axis_iter_mut(Axis(0))
-        .enumerate()
+    spec_amp.axis_iter_mut(Axis(0)).enumerate()
         .for_each(|(j, mut bin)| {
             let filter = (b * (1.0 - (SAMPLE_RATE as f32 * j as f32) * fft_dnm)).clamp(-2.0, 2.0);
             bin.iter_mut().for_each(|amp_db| *amp_db += filter);
@@ -27,20 +24,14 @@ pub fn pre_emphasis_base_tension(wave: &mut Vec<f32>, b: f32) {
         *comp_val = Complex::new(amp * phase.cos(), amp * phase.sin()); 
     });
     let mut filtered_wave = istft_core(&comp_spec, wave.len(), FFT_SIZE, HOP_SIZE);
-    let filtered_max = filtered_wave.iter()
-        .map(|x| x.abs())
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap_or(1.0);
+    let filtered_max = filtered_wave.iter().map(|x| x.abs())
+        .max_by(|a, b| a.total_cmp(b)).unwrap_or(1.0);
     let gain = (orig_max / filtered_max) * ((b / -15.0).max(0.0) + 1.0);
     wave.truncate(orig_len);
-    wave.iter_mut()
-        .zip(filtered_wave.drain(0..orig_len)) 
-        .for_each(|(w, fw)| *w = fw * gain);
+    wave.iter_mut().zip(filtered_wave.drain(0..orig_len)) .for_each(|(w, fw)| *w = fw * gain);
 }
 fn rms_db(audio: &[f32]) -> f32 {
-    let sum_sq: f32 = audio.iter()
-        .map(|&x| x * x)
-        .sum();
+    let sum_sq: f32 = audio.iter().map(|&x| x * x).sum();
     let rms = (sum_sq / audio.len() as f32).sqrt();
     if rms < 1e-10 { f32::NEG_INFINITY } else { 20.0 * rms.log10() }
 }
@@ -48,13 +39,12 @@ fn linear_fade(length: usize, fade_in: bool, sample_rate: f32) -> Vec<f32> {
     let fade_len = ((0.2 * sample_rate) as usize).min(length / 4);
     let fade_dnm = 1. / (fade_len - 1).max(1) as f32;
     let fade_out = length - fade_len;
-    (0..length)
-        .map(|i| 
-            if fade_in { 
-                if i < fade_len { i as f32 * fade_dnm } else { 1.0 }
-            } else { 
-                if i >= fade_out { (i - fade_out) as f32 * fade_dnm } else { 1.0 }
-        }).collect()
+    (0..length).map(|i| 
+        if fade_in { 
+            if i < fade_len { i as f32 * fade_dnm } else { 1.0 }
+        } else { 
+            if i >= fade_out { (i - fade_out) as f32 * fade_dnm } else { 1.0 }
+    }).collect()
 }
 pub fn loudness_norm(
     wave: &mut Vec<f32>,
@@ -102,8 +92,7 @@ pub fn loudness_norm(
     if need_restore {
         wave[0..val_start].iter_mut().for_each(|x| *x = 0.0);
         wave[val_end..orig_len].iter_mut().for_each(|x| *x = 0.0);
-        wave[val_start..val_end]
-            .iter_mut()
+        wave[val_start..val_end].iter_mut()
             .zip(linear_fade(val_len, false, sample_rate).iter())
             .for_each(|(w, f)| *w *= f);
     }

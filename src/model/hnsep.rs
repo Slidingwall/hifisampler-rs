@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use ort::{ session::{Session, builder::GraphOptimizationLevel}, value::Value };
-use ndarray::{Array4, azip, s};
+use ndarray::{Array4, ArrayView3, azip, s};
 use oxifft::Complex;
 use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::stft::*};
 const SEG_LENGTH: usize = 32 * HOP_SIZE;
@@ -28,31 +28,22 @@ impl HNSEPLoader {
         let mut spec = stft_core(&x_pad, FFT_SIZE, HOP_SIZE);
         let t_spec = spec.ncols();
         let target_t_spec = ((t_spec + 15) / 16) * 16;
-        let mut arr4 = Array4::from_elem((1, 2, OUTPUT_BIN, target_t_spec), 0.0);
-        azip!((index (c, f, t), val in &mut arr4.slice_mut(s![0, .., .., ..t_spec])) {
+        let mut input = Array4::from_elem((1, 2, OUTPUT_BIN, target_t_spec), 0.0);
+        azip!((index (c, f, t), val in &mut input.slice_mut(s![0, .., .., ..t_spec])) {
             *val = if c as usize == 0 { spec[(f, t)].re } else { spec[(f, t)].im };
         });
-        let outputs = self.session.run(vec![("input", Value::from_array(arr4).unwrap())]).unwrap();
-        let output_data = outputs.get("output")
-            .unwrap()
-            .try_extract_tensor::<f32>()
-            .unwrap()
-            .1;
-        let bin_idx = OUTPUT_BIN * target_t_spec;
+        let outputs = self.session.run(vec![("input", Value::from_array(input).unwrap())]).unwrap();
+        let output = ArrayView3::from_shape(
+            (2, OUTPUT_BIN, target_t_spec), 
+            outputs
+                .get("output").unwrap()
+                .try_extract_tensor::<f32>().unwrap().1
+        ).unwrap();
         azip!((index (f, t), sc_val in &mut spec) {
-                let t_offset = t * OUTPUT_BIN;
-                *sc_val *= Complex::new(
-                    output_data[f + t_offset],
-                    output_data[bin_idx + f + t_offset]
-                );
+                *sc_val *= Complex::new(output[(0, f, t)], output[(1, f, t)]);
             });
         x_pad.clear();
-        x_pad = istft_core(
-            &spec,
-            (t_spec - 1) * HOP_SIZE + FFT_SIZE,
-            FFT_SIZE,
-            HOP_SIZE,
-        );
+        x_pad = istft_core(&spec, (t_spec - 1) * HOP_SIZE + FFT_SIZE, FFT_SIZE, HOP_SIZE);
         x_pad.drain(0..left);
         x_pad.truncate(orig_len);
         x_pad

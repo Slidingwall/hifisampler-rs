@@ -54,28 +54,20 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
             path.exists()
         });
         if found.is_none() {
-            return Err(anyhow!(
-                "No supported audio file found (tried extensions: {:?})",
-                COMMON_EXTENSIONS
-            ));
+            return Err(anyhow!("No supported audio file found (tried extensions: {:?})", COMMON_EXTENSIONS));
         }
     }
     let source = File::open(&path)?;
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
-    let mut probed = get_probe()
-        .format(&Hint::new(), mss, &Default::default(), &Default::default())?;
-    let track = probed
-        .format
-        .default_track()
-        .ok_or_else(|| anyhow!("No audio track found"))?;
+    let mut probed = get_probe().format(&Hint::new(), mss, &Default::default(), &Default::default())?;
+    let track = probed.format.default_track().ok_or_else(|| anyhow!("No audio track found"))?;
     let spec = SignalSpec {
         channels: track.codec_params.channels.unwrap(),
         rate: track.codec_params.sample_rate.unwrap(),
     };
     let channels = spec.channels.count();
     let channels_f32 = channels as f32;
-    let mut decoder = get_codecs()
-        .make(&track.codec_params, &Default::default())?;
+    let mut decoder = get_codecs().make(&track.codec_params, &Default::default())?;
     let mut audio = Vec::with_capacity(409600);
     let mut sample_buf = SampleBuffer::<f32>::new(4096, spec);
     let track_id = track.id;
@@ -88,8 +80,7 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
         };
         sample_buf.copy_interleaved_ref(decoded);
         let samples = sample_buf.samples();
-        channels.eq(&1)
-            .then(|| audio.extend_from_slice(samples))
+        channels.eq(&1).then(|| audio.extend_from_slice(samples))
             .unwrap_or_else(|| audio.extend(samples.chunks(channels).map(|frame| frame.iter().sum::<f32>() / channels_f32)));
     }
     if spec.rate == SAMPLE_RATE {
@@ -121,9 +112,7 @@ mod tests {
     #[test]
     fn test_read_write() {
         let test_paths = ["test/01.wav", "test/pjs001.wav"]
-            .iter()
-            .map(Path::new)
-            .collect::<Vec<_>>();
+            .iter().map(Path::new).collect::<Vec<_>>();
         for path in test_paths {
             println!("Testing: {:?}", path.as_os_str());
             let out_path = path.with_extension("out.wav");

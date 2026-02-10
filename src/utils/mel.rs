@@ -27,9 +27,7 @@ pub fn mel(wave: &mut Vec<f32>, key_shift: f32, speed: f32) -> Array2<f32> {
     let proc_bins = spec.nrows();
     azip!((mut mel_row in mel_spec.axis_iter_mut(Axis(0)), nonzeros in ArrayView1::from(&MEL_BASIS_DATA)) {
         mel_row.iter_mut().enumerate().for_each(|(frame_idx, mel_val)| {
-            let sum = nonzeros
-                .iter() 
-                .filter(|&&(freq_idx, _)| freq_idx < proc_bins) 
+            let sum = nonzeros.iter().filter(|&&(freq_idx, _)| freq_idx < proc_bins) 
                 .fold(0.0, |acc, &(freq_idx, weight)| {
                     acc + spec[(freq_idx, frame_idx)] * weight 
                 });

@@ -31,8 +31,7 @@ pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
             res_col.assign(&y_col0); 
         } else {
             let idx = x.binary_search_by(|&p| p.partial_cmp(&xi_val).unwrap_or(Ordering::Greater))
-                .unwrap_or_else(|i| i.saturating_sub(1))
-                .clamp(0, x.len() - 2);
+                .unwrap_or_else(|i| i.saturating_sub(1)).clamp(0, x.len() - 2);
             let dx = x[idx + 1] - x[idx];
             let t = if dx.abs() < EPSILON { 0.0 } else { (xi_val - x[idx]) / dx };
             let y0_col = y.column(idx);
@@ -52,8 +51,7 @@ pub fn reflect_pad_2d(arr: ArrayView2<f32>, pad: usize) -> Array2<f32> {
     });
     let ref_len = n_cols.saturating_sub(1).max(1);
     let cur_idx = n_cols.saturating_sub(2);
-    pad_arr.axis_iter_mut(Axis(1))
-        .enumerate()
+    pad_arr.axis_iter_mut(Axis(1)).enumerate()
         .for_each(|(col_idx, mut pad_col)| {
             if col_idx >= n_cols {
                 pad_col.assign(&arr.column((cur_idx).saturating_sub((col_idx - n_cols) % ref_len)))

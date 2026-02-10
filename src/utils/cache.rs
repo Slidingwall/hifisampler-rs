@@ -13,9 +13,7 @@ macro_rules! defer {
     ($($stmt:stmt);* $(;)?) => {
         struct Defer<F: FnOnce()>(Option<F>);
         impl<F: FnOnce()> Drop for Defer<F> {
-            fn drop(&mut self) {
-                self.0.take().map(|f| f());
-            }
+            fn drop(&mut self) { self.0.take().map(|f| f()); }
         }
         let _defer = Defer(Some(|| { $($stmt);* }));
     };
@@ -39,12 +37,7 @@ impl CrossProcessLockManager {
         if let Some(parent) = lock_path.parent() {
             create_dir_all(parent).unwrap();
         }
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&lock_path)
-            .unwrap();
+        let file = File::options().read(true).write(true).create(true).open(&lock_path).unwrap();
         let file_arc = Arc::new(file);
         lock_files.insert(path.to_path_buf(), file_arc.clone());
         file_arc
@@ -88,12 +81,8 @@ impl CacheManager {
         }
         self.lock_manager.acquire_shared(path);
         defer! {self.lock_manager.release(path);}
-        let file = File::open(path)
-            .map_err(|e| warn!("Open cache {} failed: {}", path.display(), e))
-            .ok()?;
-        let mut reader = NpzReader::new(file)
-            .map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e))
-            .ok()?;
+        let file = File::open(path).map_err(|e| warn!("Open cache {} failed: {}", path.display(), e)).ok()?;
+        let mut reader = NpzReader::new(file).map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e)).ok()?;
         let scale_arr: Array0<f32> = reader.by_name("scale").unwrap();
         let mel_origin = reader.by_name("mel_origin").unwrap();
         info!("Cache loaded: {}", path.display());
