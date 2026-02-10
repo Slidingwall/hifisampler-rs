@@ -1,20 +1,20 @@
+use fs2::FileExt;
+use ndarray::{Array0, Array1, Array2};
+use ndarray_npy::{read_npy, write_npy, NpzReader, NpzWriter};
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, rename, File};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use ndarray::{Array0, Array1, Array2};
-use ndarray_npy::{read_npy, write_npy, NpzReader, NpzWriter};
-use once_cell::sync::Lazy;
-use fs2::FileExt;
 use tracing::{info, warn};
 macro_rules! defer {
     ($($stmt:stmt);* $(;)?) => {
         struct Defer<F: FnOnce()>(Option<F>);
         impl<F: FnOnce()> Drop for Defer<F> {
             fn drop(&mut self) {
-                self.0.take().map(|f| f()); 
+                self.0.take().map(|f| f());
             }
         }
         let _defer = Defer(Some(|| { $($stmt);* }));
@@ -87,15 +87,13 @@ impl CacheManager {
             return None;
         }
         self.lock_manager.acquire_shared(path);
-        defer! {
-            self.lock_manager.release(path);
-        }
+        defer! {self.lock_manager.release(path);}
         let file = File::open(path)
-        .map_err(|e| warn!("Open cache {} failed: {}", path.display(), e))
-        .ok()?;
+            .map_err(|e| warn!("Open cache {} failed: {}", path.display(), e))
+            .ok()?;
         let mut reader = NpzReader::new(file)
-        .map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e))
-        .ok()?;
+            .map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e))
+            .ok()?;
         let scale_arr: Array0<f32> = reader.by_name("scale").unwrap();
         let mel_origin = reader.by_name("mel_origin").unwrap();
         info!("Cache loaded: {}", path.display());
@@ -106,9 +104,7 @@ impl CacheManager {
             return None;
         }
         self.lock_manager.acquire_shared(path);
-        defer! {
-            self.lock_manager.release(path);
-        }
+        defer! {self.lock_manager.release(path);}
         let hnsep_arr = read_npy::<_, Array1<f32>>(path).unwrap();
         let hnsep_vec = hnsep_arr.to_vec();
         info!("Hnsep cache loaded: {} (length: {})", path.display(), hnsep_vec.len());
@@ -136,10 +132,8 @@ impl CacheManager {
     }
     pub fn save_hnsep_cache(&self, path: &Path, data: Vec<f32>) -> Option<Vec<f32>> {
         self.validate_file_path(path);
-        self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
-        defer! {
-            self.lock_manager.release(path);
-        }
+       self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
+        defer! {self.lock_manager.release(path);}
         if path.exists() {
             info!("Hnsep cache exists, reuse: {}", path.display());
             return self.load_hnsep_cache(path, false);

@@ -32,13 +32,7 @@ impl HNSEPLoader {
         azip!((index (c, f, t), val in &mut arr4.slice_mut(s![0, .., .., ..t_spec])) {
             *val = if c as usize == 0 { spec[(f, t)].re } else { spec[(f, t)].im };
         });
-        let input_value = Value::from_array(
-            (
-                [1, 2, OUTPUT_BIN, target_t_spec],
-                arr4.into_raw_vec_and_offset().0
-            ),
-        ).unwrap();
-        let outputs = self.session.run(vec![("input", input_value)]).unwrap();
+        let outputs = self.session.run(vec![("input", Value::from_array(arr4).unwrap())]).unwrap();
         let output_data = outputs.get("output")
             .unwrap()
             .try_extract_tensor::<f32>()

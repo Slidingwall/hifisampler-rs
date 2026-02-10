@@ -33,10 +33,8 @@ pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
             let idx = x.binary_search_by(|&p| p.partial_cmp(&xi_val).unwrap_or(Ordering::Greater))
                 .unwrap_or_else(|i| i.saturating_sub(1))
                 .clamp(0, x.len() - 2);
-            
             let dx = x[idx + 1] - x[idx];
             let t = if dx.abs() < EPSILON { 0.0 } else { (xi_val - x[idx]) / dx };
-            
             let y0_col = y.column(idx);
             let y1_col = y.column(idx + 1);
             azip!((res in &mut res_col, &y0 in &y0_col, &y1 in &y1_col) {
