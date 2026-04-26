@@ -3,7 +3,8 @@
 /.vscode
 /model
 /src/world
-/src/libs
+/src/ciglet
+/src/ggml
 *.rc
 *.res
 hifiserver-rust.exe

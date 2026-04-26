@@ -6,10 +6,10 @@ edition = "2024"
 [dependencies]
 hound = "3.5.1"
 symphonia = "0.5.5"
-rubato = { version = "0.16.2", default-features = false } #Do not upgrade this to 1.x!
-oxifft = { version = "0.1.2" , features = ["streaming"] }
+rubato = { version = "0.16.2", default-features = false } #Do not upgrade this to 1.x or 2.x!
+oxifft = { version = "0.3.0" , features = ["streaming"] }
 bs1770 = "1.0.0"
-biquad = "0.5.0"
+biquad = "0.6.0"
 
 ndarray = "0.17.2"
 ndarray-npy = "0.10.0"
@@ -18,18 +18,18 @@ regex = "1.12.3"
 
 ort = "=2.0.0-rc.11"
 
-axum = "0.8.8"
-tokio = { version = "1.49.0", features = ["rt-multi-thread", "net", "fs", "macros"] }  
+axum = "0.8.9"
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "net", "fs", "macros"] }  
 rust-ini = "=0.21.3"
 
-anyhow = { version = "1.0.101", features = ["backtrace"] }
+anyhow = { version = "1.0.102", features = ["backtrace"] }
 tracing = "0.1.44"
-tracing-subscriber = "0.3.22"
+tracing-subscriber = "0.3.23"
 
 dashmap = "=7.0.0-rc2"
-once_cell = "1.18"
-fs2 = "0.4"
-mimalloc = "0.1.48"
+once_cell = "1.21.4"
+fs2 = "0.4.3"
+mimalloc = "0.1.50"
 
 [profile.release]
 debug = true
