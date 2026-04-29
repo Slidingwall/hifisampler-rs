@@ -1,7 +1,8 @@
 use fs2::FileExt;
-use ndarray::{Array0, Array1, Array2};
-use ndarray_npy::{read_npy, write_npy, NpzReader, NpzWriter};
+use ndarray::{Array0, Array2};
+use ndarray_npy::{NpzReader, NpzWriter};
 use once_cell::sync::Lazy;
+use oxifft::Complex;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, rename, File};
 use std::path::{Path, PathBuf};
@@ -80,7 +81,7 @@ impl CacheManager {
             return None;
         }
         self.lock_manager.acquire_shared(path);
-        defer! {self.lock_manager.release(path);}
+        defer! { self.lock_manager.release(path); }
         let file = File::open(path).map_err(|e| warn!("Open cache {} failed: {}", path.display(), e)).ok()?;
         let mut reader = NpzReader::new(file).map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e)).ok()?;
         let scale_arr: Array0<f32> = reader.by_name("scale").unwrap();
@@ -88,27 +89,31 @@ impl CacheManager {
         info!("Cache loaded: {}", path.display());
         Some(Features { mel_origin, scale: scale_arr.into_scalar() })
     }
-    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Vec<f32>> {
+    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Array2<Complex<f32>>> {
         if force_gen || !path.exists() {
             return None;
         }
         self.lock_manager.acquire_shared(path);
-        defer! {self.lock_manager.release(path);}
-        let hnsep_arr = read_npy::<_, Array1<f32>>(path).unwrap();
-        let hnsep_vec = hnsep_arr.to_vec();
-        info!("Hnsep cache loaded: {} (length: {})", path.display(), hnsep_vec.len());
-        Some(hnsep_vec)
+        defer! { self.lock_manager.release(path); }
+        let file = File::open(path)
+            .map_err(|e| warn!("Open HNSEP cache {} failed: {}", path.display(), e))
+            .ok()?;
+        let mut reader = NpzReader::new(file)
+            .map_err(|e| warn!("Read HNSEP NPZ {} failed: {}", path.display(), e))
+            .ok()?;
+        let real: Array2<f32> = reader.by_name("real").unwrap();
+        let imag: Array2<f32> = reader.by_name("imag").unwrap();
+        let dim = real.dim();
+        let spec = Array2::from_shape_fn(dim, |(i, j)| {
+            Complex::new(real[(i, j)], imag[(i, j)])
+        });
+        info!("HNSEP cache loaded: {}", path.display());
+        Some(spec)
     }
-    pub fn save_features_cache(&self, path: &Path, features: &Features) -> Option<Features> {
+    pub fn save_features_cache(&self, path: &Path, features: &Features) {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
-        defer! {
-            self.lock_manager.release(path);
-        }
-        if path.exists() {
-            info!("Cache exists, reuse: {}", path.display());
-            return self.load_features_cache(path, false);
-        }
+        defer! { self.lock_manager.release(path); }
         let tmp_path = path.with_extension("tmp");
         let file = File::create(&tmp_path).unwrap();
         let mut writer = NpzWriter::new(file);
@@ -117,22 +122,21 @@ impl CacheManager {
         writer.finish().unwrap();
         rename(&tmp_path, path).unwrap();
         info!("Features saved to: {}", path.display());
-        Some(features.clone())
     }
-    pub fn save_hnsep_cache(&self, path: &Path, data: Vec<f32>) -> Option<Vec<f32>> {
+    pub fn save_hnsep_cache(&self, path: &Path, spec: &Array2<Complex<f32>>) {
         self.validate_file_path(path);
-       self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
-        defer! {self.lock_manager.release(path);}
-        if path.exists() {
-            info!("Hnsep cache exists, reuse: {}", path.display());
-            return self.load_hnsep_cache(path, false);
-        }
+        self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
+        defer! { self.lock_manager.release(path); }
         let tmp_path = path.with_extension("tmp");
-        let hnsep_arr = Array1::from_vec(data);
-        write_npy(&tmp_path, &hnsep_arr).unwrap();
+        let file = File::create(&tmp_path).unwrap();
+        let mut writer = NpzWriter::new(file);
+        let real = spec.map(|c| c.re);
+        let imag = spec.map(|c| c.im);
+        writer.add_array("real", &real).unwrap();
+        writer.add_array("imag", &imag).unwrap();
+        writer.finish().unwrap();
         rename(&tmp_path, path).unwrap();
-        info!("Hnsep saved to: {} (length: {})", path.display(), hnsep_arr.len());
-        Some(hnsep_arr.to_vec())
+        info!("HNSEP cache saved: {}", path.display());
     }
 }
 pub static CACHE_MANAGER: Lazy<CacheManager> = Lazy::new(CacheManager::default);

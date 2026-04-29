@@ -5,7 +5,7 @@ pub mod cache;
 pub mod growl;
 pub mod mel;
 mod mel_basis;
-use ndarray::{Array2, ArrayView2, Axis, azip, s};
+use ndarray::{Array2, ArrayView2, s};
 #[inline(always)]
 pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + t * (b - a)
@@ -14,25 +14,29 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
 pub fn midi_to_hz(x: f32) -> f32 {
     440. * (x / 12. - 5.75).exp2()
 }
-#[inline(always)]
-pub fn dynamic_range_compression(s: &mut Array2<f32>) {
-    s.mapv_inplace(|x| x.max(1e-9).ln());
-}
 pub fn reflect_pad_2d(arr: ArrayView2<f32>, pad: usize) -> Array2<f32> {
-    let (n_rows, n_cols) = arr.dim(); 
-    let mut pad_arr = Array2::zeros((n_rows, n_cols + pad)); 
-    azip!((mut pad_row in pad_arr.axis_iter_mut(Axis(0)), arr_row in arr.axis_iter(Axis(0))) {
-        pad_row.slice_mut(s![0..n_cols]).assign(&arr_row);
-    });
-    let ref_len = n_cols.saturating_sub(1).max(1);
-    let cur_idx = n_cols.saturating_sub(2);
-    pad_arr.axis_iter_mut(Axis(1)).enumerate()
-        .for_each(|(col_idx, mut pad_col)| {
-            if col_idx >= n_cols {
-                pad_col.assign(&arr.column((cur_idx).saturating_sub((col_idx - n_cols) % ref_len)))
-            }
-        });
-    pad_arr
+    let (rows, n) = arr.dim();
+    let new_cols = n + pad;
+    let mut out = Array2::zeros((rows, new_cols));
+    out.slice_mut(s![.., 0..n]).assign(&arr);
+    if n == 1 {
+        for col in n..new_cols {
+            out.slice_mut(s![.., col]).assign(&arr.slice(s![.., 0]));
+        }
+        return out;
+    }
+    let period = 2 * (n - 1);
+    for i in 0..pad {
+        let col = n + i;
+        let k = i % period;
+        let idx = if k < n {
+            k
+        } else {
+            period - k
+        };
+        out.slice_mut(s![.., col]).assign(&arr.slice(s![.., idx]));
+    }
+    out
 }
 pub fn reflect_pad_1d(s: &mut Vec<f32>, left: usize, right: usize) {
     let len = s.len();
@@ -49,16 +53,4 @@ pub fn reflect_pad_1d(s: &mut Vec<f32>, left: usize, right: usize) {
         let m_idx = len_2 - (i % len_1);
         s[left + len + i] = s[left + m_idx];
     });
-}
-#[cfg(test)]
-#[inline]
-pub fn linspace(start: f32, end: f32, n: usize) -> Vec<f32> {
-    if n == 0 {
-        Vec::new()
-    } else if n == 1 {
-        vec![start]
-    } else {
-        let step = (end - start) / (n - 1) as f32;
-        (0..n).map(|i| start + step * i as f32).collect()
-    }
 }

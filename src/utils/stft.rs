@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use oxifft::{Complex, Direction, Flags, Plan, streaming::WindowFunction, threading::{get_default_pool, ThreadPool}};
 static HANN_WINDOWS: Lazy<DashMap<usize, Arc<Vec<f32>>>> = Lazy::new(DashMap::new);
 static FFT_PLANS: Lazy<DashMap<(usize, Direction), Arc<Plan<f32>>>> = Lazy::new(DashMap::new);
+#[allow(dead_code)]
 static ISTFT_WINDOW_SQ: Lazy<Arc<Vec<f32>>> = Lazy::new(|| {
     let window = get_hann_window(crate::consts::FFT_SIZE);
     Arc::new(window.iter().map(|&w| w * w).collect())
@@ -24,37 +25,35 @@ fn get_fft_plan(fft_size: usize, direction: Direction) -> Arc<Plan<f32>> {
             )
         }).clone()
 }
-pub fn stft_core(
-    signal: &[f32],
-    fft_size: usize,
-    hop_size: usize,
-) -> Array2<Complex<f32>> {
-    let freq_bins = fft_size / 2 + 1; 
-    if fft_size == 0 || hop_size == 0 || signal.len() < fft_size {
+pub fn stft_core(signal: &[f32], fft_size: usize, hop_size: usize) -> Array2<Complex<f32>> {
+    let freq_bins = fft_size / 2 + 1;
+    if fft_size == 0 || hop_size == 0 {
         return Array2::from_shape_vec((freq_bins, 0), Vec::new()).unwrap();
     }
+    let n_frames = (signal.len() + hop_size - 1) / hop_size;
     let window = get_hann_window(fft_size);
     let plan = get_fft_plan(fft_size, Direction::Forward);
-    let n_frames = (signal.len() - fft_size) / hop_size + 1;
-    let mut spec = Array2::from_shape_fn((freq_bins, n_frames), |_| Complex::zero()); 
-    let pool = get_default_pool();
-    let result: Arc<Vec<OnceCell<Vec<Complex<f32>>>>> = Arc::new(
-        (0..n_frames).map(|_| OnceCell::new()).collect()
-    );
-    pool.parallel_for(n_frames, |frame_idx| {
+    let mut spec = Array2::from_shape_fn((freq_bins, n_frames), |_| Complex::zero());
+    let result = Arc::new((0..n_frames).map(|_| OnceCell::new()).collect::<Vec<_>>());
+    get_default_pool().parallel_for(n_frames, |frame_idx| {
         let start = frame_idx * hop_size;
-        let input: Vec<Complex<f32>> = signal[start..start + fft_size].iter().zip(window.iter())
-            .map(|(&s, &w)| Complex::new(s * w, 0.0)).collect();
-        let mut output = vec![Complex::zero(); fft_size];
-        plan.execute(&input, &mut output);
-        output.truncate(freq_bins); 
+        let mut input = vec![Complex::default(); fft_size];
+        signal[start..(start + fft_size).min(signal.len())]
+            .iter()
+            .zip(window.iter())
+            .enumerate()
+            .for_each(|(i, (&s, &w))| input[i] = Complex::new(s * w, 0.0));
+        let mut output = vec![Complex::default(); fft_size];
+        plan.execute(&mut input, &mut output);
+        output.truncate(freq_bins);
         let _ = result[frame_idx].set(output);
     });
-    result.iter().enumerate().for_each(|(frame_idx, once_result)| {
-            spec.slice_mut(s![.., frame_idx]).assign(&ArrayView1::from(once_result.get().unwrap()));
-        });
+    result.iter().enumerate().for_each(|(i, cell)| {
+        spec.slice_mut(s![.., i]).assign(&ArrayView1::from(cell.get().unwrap()));
+    });
     spec
 }
+#[allow(dead_code)]
 pub fn istft_core(
     spec: &Array2<Complex<f32>>,
     target_len: usize,

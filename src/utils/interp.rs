@@ -1,100 +1,100 @@
 use ndarray::{Array2, Axis, azip};
-use std::{cmp::Ordering, f32::EPSILON};
-use crate::utils::lerp;
+use std::{cmp::Ordering, f32::{EPSILON, consts::PI}};
 pub fn akima(x: &[f32], y: &[f32], t: &[f32]) -> Vec<f32> {
-    const EPS: f32 = 1e-9;
-    let n = x.len();
+    let n = y.len();
     let mut out = Vec::with_capacity(t.len());
-    if n < 2 {
-        out.resize(t.len(), y.first().copied().unwrap_or(0.0));
-        return out;
+    match n {
+        0 => { out.resize(t.len(), 0.0); return out; }
+        1 => { out.resize(t.len(), y[0]); return out; }
+        2 => {
+            let k = (y[1] - y[0]) / (x[1] - x[0]);
+            t.iter().for_each(|&p| out.push(if p <= x[0] { y[0] } else if p >= x[1] { y[1] } else { y[0] + (p - x[0]) * k }));
+            return out;
+        }
+        _ => {}
     }
-    if n == 2 {
-        let k = (y[1] - y[0]) / (x[1] - x[0]);
-        out.extend(t.iter().map(|&p| {
-            if p <= x[0] { y[0] } else if p >= x[1] { y[1] } else { y[0] + (p - x[0]) * k }
-        }));
-        return out;
-    }
-    let slopes: Vec<f32> = (0..n-1).map(|i| (y[i+1] - y[i]) / (x[i+1] - x[i])).collect();
-    let mut m_ext = vec![
-        2.0 * (2.0 * slopes[0] - slopes[1]) - slopes[0],
-        2.0 * slopes[0] - slopes[1]
-    ];
-    m_ext.extend(&slopes);
-    m_ext.extend([2.0 * slopes[n-2] - slopes[n-3], 2.0 * (2.0 * slopes[n-2] - slopes[n-3]) - slopes[n-2]]);
-    let mut max_w = 0.0f32;
+    let mut m = vec![0.0; n];
     for i in 0..n {
-        let w1 = (m_ext[i+3] - m_ext[i+2]).abs();
-        let w2 = (m_ext[i+1] - m_ext[i]).abs();
-        max_w = max_w.max(w1 + w2);
+        let w1 = (((if i == n-1 { 2.0 * y[n-1] - y[n-3] } else if i == n-2 { 2.0 * y[n-1] - y[n-2] } else { y[i+2] }) - (if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] })) - ((if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] }) - y[i])).abs();
+        let w2 = ((y[i] - (if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] })) - ((if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] }) - (if i == 0 { 2.0 * y[0] - y[2] } else if i == 1 { 2.0 * y[0] - y[1] } else { y[i-2] }))).abs();
+        m[i] = if w1 + w2 < 1e-12 {
+            ((y[i] - (if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] })) + ((if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] }) - y[i])) * 0.5
+        } else {
+            (w1 * (y[i] - (if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] })) + w2 * ((if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] }) - y[i])) / (w1 + w2)
+        };
     }
-    let t_vals: Vec<f32> = (0..n)
-        .map(|i| {
-            let (w1, w2) = ((m_ext[i+3]-m_ext[i+2]).abs(), (m_ext[i+1]-m_ext[i]).abs());
-            let sum = w1 + w2;
-            if sum > EPS * max_w {
-                (w1 * m_ext[i+1] + w2 * m_ext[i+2]) / sum
-            } else {
-                (m_ext[i+3] + m_ext[i]) * 0.5
-            }
-        })
-        .collect();
-    let coeffs: Vec<[f32; 5]> = (0..n-1)
-        .map(|i| {
-            let dx = x[i+1] - x[i];
-            let dy = y[i+1] - y[i];
-            let b = t_vals[i] * dx;
-            [
-                y[i], b,
-                3.0*dy - 2.0*b - t_vals[i+1]*dx,
-                2.0*(y[i]-y[i+1]) + b + t_vals[i+1]*dx,
-                dx,
-            ]
-        })
-        .collect();
-    let mut idx = 0usize;
+    let coeffs: Vec<_> = (0..n-1).map(|i| (y[i], m[i]*(x[i+1]-x[i]), 3.*(y[i+1]-y[i])-2.*m[i]*(x[i+1]-x[i])-m[i+1]*(x[i+1]-x[i]), 2.*(y[i]-y[i+1])+m[i]*(x[i+1]-x[i])+m[i+1]*(x[i+1]-x[i]), x[i+1]-x[i])).collect();
+    let (x0, xn) = (x[0], x[n-1]);
+    let mut idx = 0;
     for &p in t {
-        if p <= x[0] {
+        if p <= x0 {
             out.push(y[0]);
-            continue;
-        }
-        if p >= x[n-1] {
+        } else if p >= xn {
             out.push(y[n-1]);
-            continue;
+        } else {
+            while idx + 1 < x.len() && x[idx + 1] < p { idx += 1; }
+            let (c0, c1, c2, c3, dx) = coeffs[idx];
+            out.push(c0 + ((p - x[idx])/dx) * (c1 + ((p - x[idx])/dx) * (c2 + ((p - x[idx])/dx) * c3)));
         }
-        while idx < coeffs.len() && x[idx+1] < p {
-            idx += 1;
-        }
-        let [a, b, c, d, dx] = coeffs[idx];
-        let u = (p - x[idx]) / dx;
-        out.push(a + u * (b + u * (c + u * d)));
     }
     out
 }
 pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
     let mut res = Array2::zeros((y.nrows(), xi.len()));
-    let (y_col0, y_col_e) = (y.column(0), y.column(x.len() - 1));
-    azip!((mut res_col in res.axis_iter_mut(Axis(1)), &xi_val in xi) {
-        if xi_val >= *x.last().unwrap() - EPSILON {
-            res_col.assign(&y_col_e); 
-        } else if xi_val <= x[0] + EPSILON {
-            res_col.assign(&y_col0); 
-        } else {
-            let idx = x.binary_search_by(|&p| p.partial_cmp(&xi_val).unwrap_or(Ordering::Greater))
-                .unwrap_or_else(|i| i.saturating_sub(1))
-                .clamp(0, x.len() - 2);
-            let dx = x[idx + 1] - x[idx];
-            let t = if dx.abs() < EPSILON {
-                0.0
-            } else {
-                (xi_val - x[idx]) / dx
-            };
-            let (y0_col, y1_col) = (y.column(idx), y.column(idx + 1));
-            azip!((res in &mut res_col, &y0 in &y0_col, &y1 in &y1_col) {
-                *res = lerp(y0, y1, t);
-            });
+    let n_rows = y.nrows();
+    let n_cols = y.ncols();
+    if n_cols == 0 { return res; }
+    let x_first = x[0];
+    let x_last = x[n_cols - 1];
+    azip!((mut col in res.axis_iter_mut(Axis(1)), &xv in xi) {
+        if xv >= x_last { col.assign(&y.column(n_cols - 1)); return; }
+        if xv <= x_first { col.assign(&y.column(0)); return; }
+        let i = x.binary_search_by(|&v| v.partial_cmp(&xv).unwrap_or(Ordering::Greater))
+            .unwrap_or_else(|i| i.saturating_sub(1))
+            .clamp(0, n_cols - 2);
+        let dx = x[i + 1] - x[i];
+        let t = if dx.abs() < EPSILON { 0.0 } else { (xv - x[i]) / dx };
+        let y0 = y.column(i);
+        let y1 = y.column(i + 1);
+        for r in 0..n_rows {
+            col[r] = y0[r] + (y1[r] - y0[r]) * t;
         }
     });
     res
+}
+pub fn spec_interp(
+    input: &Array2<f32>,
+    output_shape: (usize, usize),
+    interp_axis: Axis,
+    get_pos: impl Fn(usize) -> (isize, f32) + Sync + Send,
+) -> Array2<f32> {
+    let mut out = Array2::zeros(output_shape);
+    let input_len = input.len_of(interp_axis) as isize;
+    let output_len = out.len_of(interp_axis) as isize;
+    let iter_axis = Axis(1 - interp_axis.0);
+    azip!((mut out_slice in out.axis_iter_mut(iter_axis), in_slice in input.axis_iter(iter_axis)) {
+        for i in 0..output_len as usize {
+            let (idx, frac) = get_pos(i);
+            let mut sum = 0.0;
+            let mut weight_sum = 0.0;
+            for t in -3..=3 {
+                let pos = idx + t;
+                if pos >= 0 && pos < input_len {
+                    let x = t as f32 - frac;
+                    let weight = if x == 0.0 {
+                        1.0
+                    } else if x.abs() < 3.0 {
+                        (PI * x).sin() * (PI * x / 3.0).sin() / (PI * PI * x * x / 3.0)
+                    } else {
+                        0.0
+                    };
+                    let val = (in_slice[pos as usize] + 1e-9).ln();
+                    sum += val * weight;
+                    weight_sum += weight;
+                }
+            }
+            out_slice[i] = if weight_sum > 1e-9 { sum / weight_sum } else { 0.0 };
+        }
+    });
+    out
 }

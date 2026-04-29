@@ -1,50 +1,33 @@
-use crate::{
-    consts::{FFT_SIZE, ORIGIN_HOP_SIZE},
-    utils::{mel_basis::MEL_BASIS_DATA, reflect_pad_1d, stft::stft_core},
-};
-use ndarray::{Array2, ArrayView1, Axis, azip, concatenate, s};
+use crate::{consts::FFT_SIZE, utils::{interp::spec_interp, mel_basis::MEL_BASIS_DATA}};
+use ndarray::{Array2, Axis, azip};
 const TARGET_BINS: usize = FFT_SIZE / 2 + 1;
-pub fn mel(wave: &mut Vec<f32>, key_shift: f32, speed: f32) -> Array2<f32> {
-    let fft_size = (FFT_SIZE as f32 * 2f32.powf(key_shift / 12.0)).round() as usize;
-    reflect_pad_1d(
-        wave, 
-        (fft_size - (ORIGIN_HOP_SIZE as f32 * speed).round() as usize) / 2, 
-        (fft_size - (ORIGIN_HOP_SIZE as f32 * speed).round() as usize + 1) / 2
-    );
-    let comp_spec = stft_core(wave, fft_size, (ORIGIN_HOP_SIZE as f32 * speed).round() as usize);
-    let mut spec = comp_spec.mapv(|c| c.norm());
-    if key_shift != 0. {
-        spec = match comp_spec.nrows().cmp(&TARGET_BINS) {
-            std::cmp::Ordering::Less => concatenate(Axis(0), &[spec.view(), Array2::zeros((TARGET_BINS - comp_spec.nrows(), comp_spec.ncols())).view()]).unwrap(),
-            std::cmp::Ordering::Greater => spec.slice(s![..TARGET_BINS, ..]).to_owned(),
-            std::cmp::Ordering::Equal => spec,
-        };
-        spec.mapv_inplace(|x| x * FFT_SIZE as f32 / fft_size as f32);
+pub fn mel(spec:&Array2<f32>,key_shift:f32)->Array2<f32>{
+    let (inf, ot) = spec.dim();
+    let mut mel_spec = Array2::zeros((128, ot));
+    let target_time = ((ot-1)as f32 *4.).round() as usize +1;
+    let mut process_mel = |data: &Array2<f32>| {
+        azip!((mut row in mel_spec.axis_iter_mut(Axis(0)), filter in &MEL_BASIS_DATA) {
+            row.iter_mut().enumerate().for_each(|(t, val)| {
+                *val = filter.iter().filter(|&&(f,_)| f < TARGET_BINS).map(|&(f,w)| data[(f,t)]*w).sum();
+            });
+        });
+    };
+    if key_shift.abs() < 1e-6 {
+        process_mel(spec);
+    } else {
+        let fs = (-key_shift /12.).exp2();
+        let tf = (FFT_SIZE as f32 * fs).round() as usize /2 +1;
+        let mut sf = spec_interp(spec,(tf,ot),Axis(0),|f| {
+            let x = f as f32 *(inf as f32/tf as f32);
+            (x.floor() as isize, x.fract())
+        });
+        sf = ndarray::concatenate(Axis(0),&[sf.view(),Array2::zeros((TARGET_BINS-sf.nrows(),ot)).view()]).unwrap();
+        let amp_scale = FFT_SIZE as f32 / (FFT_SIZE as f32 * fs).round() as f32;
+        sf.iter_mut().for_each(|v| *v = v.exp() * amp_scale);
+        process_mel(&sf);
     }
-    let mut mel_spec = Array2::zeros((128, comp_spec.ncols()));
-    azip!((mut mel_row in mel_spec.axis_iter_mut(Axis(0)), nonzeros in ArrayView1::from(&MEL_BASIS_DATA)) {
-        for frame_idx in 0..comp_spec.ncols() {
-            let mut sum = 0.0;
-            for &(freq_idx, weight) in *nonzeros {
-                sum += spec[(freq_idx, frame_idx)] * weight;
-            }
-            mel_row[frame_idx] = sum;
-        }
-    });
-    mel_spec
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{utils::linspace};
-    #[test]
-    fn test_mel_analyzer() {
-        let sample_len = FFT_SIZE * 10;
-        let mut y = linspace(0., 1., sample_len);
-        let mel_spec = mel(&mut y, 0., 1.0);
-        let (pad_left, pad_right) = ((FFT_SIZE - ORIGIN_HOP_SIZE) / 2, (FFT_SIZE - ORIGIN_HOP_SIZE) + 1 / 2);
-        let expected_frames = ((sample_len + pad_left + pad_right - FFT_SIZE) / ORIGIN_HOP_SIZE) + 1;
-        assert_eq!(mel_spec.dim(), (128, expected_frames));
-        assert!(mel_spec.iter().all(|&x| !x.is_nan()));
-    }
+    spec_interp(&mel_spec, (128, target_time), Axis(1), |t| {
+        let x = t as f32 /4.;
+        (x.floor() as isize, x.fract())
+    })
 }

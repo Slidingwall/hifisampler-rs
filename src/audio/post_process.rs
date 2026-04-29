@@ -1,30 +1,18 @@
 use bs1770::{ChannelLoudnessMeter, gated_mean};
-use ndarray::{Axis, azip};
-use oxifft::Complex;
+use ndarray::{Array2, Axis};
 use crate::{
-    consts::{FFT_SIZE, HOP_SIZE, HIFI_CONFIG, SAMPLE_RATE},
-    utils::{stft::{stft_core, istft_core}, reflect_pad_1d}, 
+    consts::{FFT_SIZE, HIFI_CONFIG, SAMPLE_RATE},
+    utils::{reflect_pad_1d}, 
 };
-pub fn pre_emphasis_base_tension(wave: &mut Vec<f32>, b: f32) {
-    let orig_len = wave.len();
-    let orig_max = wave.iter().fold(0f32, |m, &x| m.max(x.abs()));
-    wave.resize(((orig_len + HOP_SIZE - 1) / HOP_SIZE) * HOP_SIZE, 0.0);
-    let mut spec = stft_core(wave, FFT_SIZE, HOP_SIZE);
-    let mut spec_amp = spec.mapv(|c| c.norm().max(1e-9).ln());
-    spec_amp.axis_iter_mut(Axis(0)).enumerate().for_each(|(j, mut bin)| {
-        bin.iter_mut().for_each(|v| *v += (b * (1.0 - j as f32 * (SAMPLE_RATE as f32 / (FFT_SIZE / 1500 + 3000) as f32))).clamp(-2.0f32, 2.0f32));
+pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32, orig_max: f32) {
+    spec.axis_iter_mut(Axis(0)).enumerate().for_each(|(j, mut bin)| {
+        let coeff = b * (1.0 - j as f32 * SAMPLE_RATE as f32 / (FFT_SIZE / 1500 + 3000) as f32);
+        let scale = coeff.clamp(-2.0, 2.0).exp();
+        bin.iter_mut().for_each(|v| *v *= scale);
     });
-    azip!((comp in &mut spec, &amp_db in &spec_amp) {
-        *comp = Complex::new(amp_db.exp() * comp.arg().cos(), amp_db.exp() * comp.arg().sin());
-    });
-    let mut filtered = istft_core(&spec, wave.len(), FFT_SIZE, HOP_SIZE);
-    let f_max = filtered.iter().fold(0f32, |m, &x| m.max(x.abs()));
+    let f_max = spec.iter().fold(0.0f32, |max, &val| max.max(val));
     let gain = (orig_max / f_max) * ((-b / 15.0).clamp(0.0, 0.33) + 1.0);
-    wave.truncate(orig_len);
-    wave.iter_mut()
-        .zip(filtered.drain(..orig_len))
-        .for_each(|(w, f)| *w = f * gain);
-    wave.iter_mut().for_each(|x| *x = x.clamp(-1.0, 1.0));
+    spec.mapv_inplace(|x| x * gain);
 }
 pub fn loudness_norm(
     wave: &mut Vec<f32>,

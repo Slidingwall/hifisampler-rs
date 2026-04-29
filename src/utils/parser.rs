@@ -45,7 +45,6 @@ pub fn pitch_string_to_cents(string: &str) -> Result<Vec<f32>> {
     Ok(res.into_iter().map(|x| x as f32 * 0.01).chain(std::iter::once(0.0)).collect())
 }
 #[inline(always)]
-#[allow(dead_code)]
 pub fn tempo_parser(arg: &str) -> Result<f32> {
     let tempo: f32 = arg[1..].parse()?;
     Ok(tempo)
