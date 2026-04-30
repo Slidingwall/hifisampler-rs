@@ -2,7 +2,6 @@ use fs2::FileExt;
 use ndarray::{Array0, Array2};
 use ndarray_npy::{NpzReader, NpzWriter};
 use once_cell::sync::Lazy;
-use oxifft::Complex;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, rename, File};
 use std::path::{Path, PathBuf};
@@ -18,11 +17,6 @@ macro_rules! defer {
         }
         let _defer = Defer(Some(|| { $($stmt);* }));
     };
-}
-#[derive(Debug, Clone)]
-pub struct Features {
-    pub mel_origin: Array2<f32>,
-    pub scale: f32,
 }
 #[derive(Debug, Default)]
 struct CrossProcessLockManager {
@@ -76,7 +70,7 @@ impl CacheManager {
             create_dir_all(parent).unwrap();
         }
     }
-    pub fn load_features_cache(&self, path: &Path, force_gen: bool) -> Option<Features> {
+    pub fn load_features_cache(&self, path: &Path, force_gen: bool) -> Option<(Array2<f32>, f32)> {
         if force_gen || !path.exists() {
             return None;
         }
@@ -84,12 +78,12 @@ impl CacheManager {
         defer! { self.lock_manager.release(path); }
         let file = File::open(path).map_err(|e| warn!("Open cache {} failed: {}", path.display(), e)).ok()?;
         let mut reader = NpzReader::new(file).map_err(|e| warn!("Read NPZ {} failed: {}", path.display(), e)).ok()?;
-        let scale_arr: Array0<f32> = reader.by_name("scale").unwrap();
-        let mel_origin = reader.by_name("mel_origin").unwrap();
+        let scale: Array0<f32> = reader.by_name("scale").unwrap();
+        let mel_origin: Array2<f32> = reader.by_name("mel_origin").unwrap();
         info!("Cache loaded: {}", path.display());
-        Some(Features { mel_origin, scale: scale_arr.into_scalar() })
+        Some((mel_origin, scale.into_scalar()))
     }
-    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Array2<Complex<f32>>> {
+    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<(Array2<f32>, Array2<f32>)> {
         if force_gen || !path.exists() {
             return None;
         }
@@ -103,37 +97,32 @@ impl CacheManager {
             .ok()?;
         let real: Array2<f32> = reader.by_name("real").unwrap();
         let imag: Array2<f32> = reader.by_name("imag").unwrap();
-        let dim = real.dim();
-        let spec = Array2::from_shape_fn(dim, |(i, j)| {
-            Complex::new(real[(i, j)], imag[(i, j)])
-        });
         info!("HNSEP cache loaded: {}", path.display());
-        Some(spec)
+        Some((real, imag))
     }
-    pub fn save_features_cache(&self, path: &Path, features: &Features) {
+    pub fn save_features_cache(&self, path: &Path, (mel_origin, scale): &(Array2<f32>, f32)) {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! { self.lock_manager.release(path); }
         let tmp_path = path.with_extension("tmp");
         let file = File::create(&tmp_path).unwrap();
         let mut writer = NpzWriter::new(file);
-        writer.add_array("mel_origin", &features.mel_origin).unwrap();
-        writer.add_array("scale", &Array0::from_elem((), features.scale)).unwrap();
+        writer.add_array("mel_origin", mel_origin).unwrap();
+        writer.add_array("scale", &Array0::from_elem((), *scale)).unwrap();
         writer.finish().unwrap();
         rename(&tmp_path, path).unwrap();
         info!("Features saved to: {}", path.display());
     }
-    pub fn save_hnsep_cache(&self, path: &Path, spec: &Array2<Complex<f32>>) {
+    pub fn save_hnsep_cache(&self, path: &Path, spec: &(Array2<f32>, Array2<f32>)) {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! { self.lock_manager.release(path); }
         let tmp_path = path.with_extension("tmp");
         let file = File::create(&tmp_path).unwrap();
         let mut writer = NpzWriter::new(file);
-        let real = spec.map(|c| c.re);
-        let imag = spec.map(|c| c.im);
-        writer.add_array("real", &real).unwrap();
-        writer.add_array("imag", &imag).unwrap();
+        let (real, imag) = spec;
+        writer.add_array("real", real).unwrap();
+        writer.add_array("imag", imag).unwrap();
         writer.finish().unwrap();
         rename(&tmp_path, path).unwrap();
         info!("HNSEP cache saved: {}", path.display());
