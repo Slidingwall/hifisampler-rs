@@ -4,7 +4,7 @@ use std::{collections::HashMap, path::PathBuf};
 use tracing::info;
 use crate::{
     audio::{post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio},
-    consts::{FEATURE_EXT, FFT_SIZE, HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE},
+    consts::{FFT_SIZE, HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE},
     model::{get_remover, get_vocoder},
     utils::{cache::{CACHE_MANAGER}, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, parser::{flag_parser, pitch_parser, pitch_string_to_cents, tempo_parser}, reflect_pad_2d, stft::stft_core},
 };
@@ -52,28 +52,25 @@ impl Resampler {
         let tension = self.flags.get("Ht").copied().flatten().unwrap_or(0.0);
         let gender = self.flags.get("g").copied().flatten().unwrap_or(0.0);
         let fname = self.in_file.file_stem().unwrap().to_str().unwrap();
-        let features_path = self.in_file.with_file_name(format!("{fname}_Hb{breath}Hv{voicing}Ht{tension}g{gender}{FEATURE_EXT}"));
+        let features_path = self.in_file.with_file_name(format!("{fname}_Hb{breath}Hv{voicing}Ht{tension}g{gender}.hifi.npz"));
         let ignore_cache = self.flags.contains_key("G");
-        if let Some(feats) = CACHE_MANAGER.load_features_cache(&features_path, ignore_cache) {
-            return Ok(feats);
-        }
+        if let Some(feats) = CACHE_MANAGER.load_features_cache(&features_path, ignore_cache) { return Ok(feats); }
         info!("Generating features: {}", features_path.display());
         let wave = read_audio(&self.in_file)?;
         let spec_mix = stft_core(&wave, FFT_SIZE, HOP_SIZE);
         let dim = spec_mix.0.dim();
         let mut spec_amp = if tension != 0.0 || breath != voicing {
             let (bre, voi) = (breath.clamp(0.0,500.0)*0.01, voicing.clamp(0.0,150.0)*0.01);
-            let seg = CACHE_MANAGER.load_hnsep_cache(&self.in_file.with_file_name(format!("{fname}_hnsep")), ignore_cache)
-                .unwrap_or_else(||{let s=get_remover().lock().unwrap().run(&spec_mix);CACHE_MANAGER.save_hnsep_cache(&self.in_file.with_file_name(format!("{fname}_hnsep")),&s);s});
-            let mut tensed = Array2::zeros(seg.0.dim());
-            azip!((t in &mut tensed, r in &seg.0, i in &seg.1) {*t = (r*voi).hypot(i*voi);});
+            let seg = CACHE_MANAGER.load_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.npz")), ignore_cache)
+                .unwrap_or_else(||{let s=get_remover().lock().unwrap().run(&spec_mix);CACHE_MANAGER.save_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.npz")),&s);s});
+            let mut tensed = Array2::zeros(seg.dim());
+            azip!((t in &mut tensed, sm in &seg) {*t = sm * voi;});
             let orig_max = tensed.iter().fold(0.0f32, |max, val| max.max(*val));
             if tension != 0.0 { pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02, orig_max); }
             let mut out = Array2::zeros(dim);
-            azip!((o in &mut out, cr in &spec_mix.0, ci in &spec_mix.1, sr in &seg.0, si in &seg.1, t in &tensed) {
-                let amp = (sr*voi).hypot(si*voi);
-                let k = voi * if amp>1e-9 {t/amp}else{0.0} - bre;
-                *o = (cr*bre + sr*k).hypot(ci*bre + si*k);
+            azip!((o in &mut out, cr in &spec_mix.0, ci in &spec_mix.1, sm in &seg, t in &tensed) {
+                let mix_mag = cr.hypot(*ci);
+                *o = (bre * (mix_mag - sm) + t).abs();
             });
             out
         } else {

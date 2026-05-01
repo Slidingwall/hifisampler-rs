@@ -2,7 +2,6 @@ pub const SAMPLE_RATE: u32 = 44100;
 pub const FFT_SIZE: usize = 2048;
 pub const HOP_SIZE: usize = 512;
 pub const ORIGIN_HOP_SIZE: usize = 128;
-pub const FEATURE_EXT: &str = ".hifi.npz";
 use ini::Ini;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;

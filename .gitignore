@@ -7,5 +7,5 @@
 /src/ggml
 *.rc
 *.res
-hifiserver-rust.exe
+*.exe
 flamegraph.svg

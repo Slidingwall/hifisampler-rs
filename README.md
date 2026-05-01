@@ -14,14 +14,11 @@ This project is based on [StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs
 
 ## About 关于
 
-The vision of this project is to unofficially migrate hifisampler to the Rust programming language, just like its upstream project StrayCat, in order to reduce its dependencies, software size, or improve its speed.  
-本项目的愿景是将hifisampler非官方地与其上游项目StrayCat一样迁移至rust语言中，以减少其依赖项、软件体积或提升其速度。  
+The vision of this project is to unofficially migrate hifisampler to the Rust programming language, just like its upstream project StrayCat, in order to reduce its dependencies, software size, or improve its speed. Due to differences in the programming languages and libraries used, this project may not 100% replicate all functions of hifisampler, and the generated results may also differ from those of hifisampler.  
+本项目的愿景是将hifisampler非官方地与其上游项目StrayCat一样迁移至rust语言中，以减少其依赖项、软件体积或提升其速度。由于所采用的编程语言和库不同，本项目可能不会100%复现hifisampler的全部功能，生成结果也可能与hifisampler有所出入。  
 
-Due to differences in the programming languages and libraries used, this project may not 100% replicate all functions of hifisampler, and the generated results may also differ from those of hifisampler. Furthermore, the latest fixes and features of hifisampler may not be promptly updated in this project.  
-由于所采用的编程语言和库不同，本项目可能不会100%复现hifisampler的全部功能，生成结果也可能与hifisampler有所出入。此外，hifisampler最新的修复、功能也可能无法及时更新到本项目中。  
-
-I used generative AI services to understand and convert Python and Rust code, and adopted a comment removal tool to eliminate the comments added during this process,. I have reorganized the code structure of the Rust version to align with the Python version as much as possible, removed some redundant code, and attempted to update some dependencies. Although the file extension of the cache files is consistent with that of the Python version, their actual structure may have certain differences from the Python version.  
-我借助了生成式人工智能服务来理解与转换Python及rust代码，并采用了注释移除工具移除了这个过程中添加的注释。我尽可能地按照Python版本重新组织了rust版本的代码结构、移除了一些冗余的代码，并尝试对依赖项进行了一些更新。缓存文件的后缀虽与Python版本一致，但其实际结构可能与Python版本有一定差异。  
+During the refactoring process, this project has also made several modifications to the original workflow of hifisampler. Examples include redundant STFT/ISTFT transformations and repeated logarithmic/exponential conversions during feature generation. Errors introduced while optimizing the computational pipeline may cause discrepancies against the processing results of the original Python implementation.  
+在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动。例如在生成特征时重复的stft/istft转换和重复的对数/指数转换等。在优化计算流程中引入的误差可能使其与原来的Python处理结果有所不同。  
 
 ## Using 使用
 

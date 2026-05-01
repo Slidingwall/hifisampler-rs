@@ -83,7 +83,7 @@ impl CacheManager {
         info!("Cache loaded: {}", path.display());
         Some((mel_origin, scale.into_scalar()))
     }
-    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<(Array2<f32>, Array2<f32>)> {
+    pub fn load_hnsep_cache(&self, path: &Path, force_gen: bool) -> Option<Array2<f32>> {
         if force_gen || !path.exists() {
             return None;
         }
@@ -95,10 +95,9 @@ impl CacheManager {
         let mut reader = NpzReader::new(file)
             .map_err(|e| warn!("Read HNSEP NPZ {} failed: {}", path.display(), e))
             .ok()?;
-        let real: Array2<f32> = reader.by_name("real").unwrap();
-        let imag: Array2<f32> = reader.by_name("imag").unwrap();
+        let mag: Array2<f32> = reader.by_name("mag").unwrap();
         info!("HNSEP cache loaded: {}", path.display());
-        Some((real, imag))
+        Some(mag)
     }
     pub fn save_features_cache(&self, path: &Path, (mel_origin, scale): &(Array2<f32>, f32)) {
         self.validate_file_path(path);
@@ -113,16 +112,14 @@ impl CacheManager {
         rename(&tmp_path, path).unwrap();
         info!("Features saved to: {}", path.display());
     }
-    pub fn save_hnsep_cache(&self, path: &Path, spec: &(Array2<f32>, Array2<f32>)) {
+    pub fn save_hnsep_cache(&self, path: &Path, mag: &Array2<f32>) {
         self.validate_file_path(path);
         self.lock_manager.acquire_exclusive(path, Duration::from_secs(5));
         defer! { self.lock_manager.release(path); }
         let tmp_path = path.with_extension("tmp");
         let file = File::create(&tmp_path).unwrap();
         let mut writer = NpzWriter::new(file);
-        let (real, imag) = spec;
-        writer.add_array("real", real).unwrap();
-        writer.add_array("imag", imag).unwrap();
+        writer.add_array("mag", mag).unwrap();
         writer.finish().unwrap();
         rename(&tmp_path, path).unwrap();
         info!("HNSEP cache saved: {}", path.display());
