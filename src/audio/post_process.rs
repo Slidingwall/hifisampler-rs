@@ -4,7 +4,8 @@ use crate::{
     consts::{FFT_SIZE, HIFI_CONFIG, SAMPLE_RATE},
     utils::{reflect_pad_1d}, 
 };
-pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32, orig_max: f32) {
+pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32) {
+    let orig_max = spec.iter().fold(0.0f32, |max, &val| max.max(val));
     spec.axis_iter_mut(Axis(0)).enumerate().for_each(|(j, mut bin)| {
         let coeff = b * (1.0 - j as f32 * SAMPLE_RATE as f32 / (FFT_SIZE / 1500 + 3000) as f32);
         let scale = coeff.clamp(-2.0, 2.0).exp();

@@ -65,8 +65,7 @@ impl Resampler {
                 .unwrap_or_else(||{let s=get_remover().lock().unwrap().run(&spec_mix);CACHE_MANAGER.save_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.npz")),&s);s});
             let mut tensed = Array2::zeros(seg.dim());
             azip!((t in &mut tensed, sm in &seg) {*t = sm * voi;});
-            let orig_max = tensed.iter().fold(0.0f32, |max, val| max.max(*val));
-            if tension != 0.0 { pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02, orig_max); }
+            if tension != 0.0 { pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02); }
             let mut out = Array2::zeros(dim);
             azip!((o in &mut out, cr in &spec_mix.0, ci in &spec_mix.1, sm in &seg, t in &tensed) {
                 let mix_mag = cr.hypot(*ci);
