@@ -52,7 +52,7 @@ impl Resampler {
         let tension = self.flags.get("Ht").copied().flatten().unwrap_or(0.0);
         let gender = self.flags.get("g").copied().flatten().unwrap_or(0.0);
         let fname = self.in_file.file_stem().unwrap().to_str().unwrap();
-        let features_path = self.in_file.with_file_name(format!("{fname}_Hb{breath}Hv{voicing}Ht{tension}g{gender}.hifi.npz"));
+        let features_path = self.in_file.with_file_name(format!("{fname}_Hb{breath}Hv{voicing}Ht{tension}g{gender}.hifi.bin"));
         let ignore_cache = self.flags.contains_key("G");
         if let Some(feats) = CACHE_MANAGER.load_features_cache(&features_path, ignore_cache) { return Ok(feats); }
         info!("Generating features: {}", features_path.display());
@@ -61,8 +61,8 @@ impl Resampler {
         let dim = spec_mix.0.dim();
         let mut spec_amp = if tension != 0.0 || breath != voicing {
             let (bre, voi) = (breath.clamp(0.0,500.0)*0.01, voicing.clamp(0.0,150.0)*0.01);
-            let seg = CACHE_MANAGER.load_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.npz")), ignore_cache)
-                .unwrap_or_else(||{let s=get_remover().lock().unwrap().run(&spec_mix);CACHE_MANAGER.save_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.npz")),&s);s});
+            let seg = CACHE_MANAGER.load_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.bin")), ignore_cache)
+                .unwrap_or_else(||{let s=get_remover().lock().unwrap().run(&spec_mix);CACHE_MANAGER.save_hnsep_cache(&self.in_file.with_file_name(format!("{fname}.hnsep.bin")),&s);s});
             let mut tensed = Array2::zeros(seg.dim());
             azip!((t in &mut tensed, sm in &seg) {*t = sm * voi;});
             if tension != 0.0 { pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02); }
@@ -77,7 +77,7 @@ impl Resampler {
             azip!((o in &mut out, r in &spec_mix.0, i in &spec_mix.1) {*o = r.hypot(*i) * breath*0.01;});
             out
         };
-        let scale = 512.0f32.max(spec_amp.iter().fold(0.0, |m, &x| m.max(x))).recip() * 512.0;
+        let scale = 512f32.max(spec_amp.iter().fold(0.0, |m, &x| m.max(x))).recip() * 512.0;
         spec_amp.mapv_inplace(|x| x * scale);
         let features = (mel(&spec_amp, gender.clamp(-600.0,600.0)*0.01), scale);
         CACHE_MANAGER.save_features_cache(&features_path, &features);
