@@ -16,25 +16,19 @@ pub fn midi_to_hz(x: f32) -> f32 {
 }
 pub fn reflect_pad_2d(arr: ArrayView2<f32>, pad: usize) -> Array2<f32> {
     let (rows, n) = arr.dim();
-    let new_cols = n + pad;
-    let mut out = Array2::zeros((rows, new_cols));
+    let mut out = Array2::zeros((rows, n + pad));
     out.slice_mut(s![.., 0..n]).assign(&arr);
     if n == 1 {
-        for col in n..new_cols {
-            out.slice_mut(s![.., col]).assign(&arr.slice(s![.., 0]));
+        for i in 0..pad {
+            out.slice_mut(s![.., n + i]).assign(&arr.slice(s![.., 0]));
         }
         return out;
     }
     let period = 2 * (n - 1);
     for i in 0..pad {
-        let col = n + i;
-        let k = i % period;
-        let idx = if k < n {
-            k
-        } else {
-            period - k
-        };
-        out.slice_mut(s![.., col]).assign(&arr.slice(s![.., idx]));
+        let r = (n + i) % period;
+        out.slice_mut(s![.., n + i])
+            .assign(&arr.slice(s![.., if r < period - r { r } else { period - r }]));
     }
     out
 }

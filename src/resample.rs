@@ -6,7 +6,7 @@ use crate::{
     audio::{post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio},
     consts::{FFT_SIZE, HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE},
     model::{get_remover, get_vocoder},
-    utils::{cache::{CACHE_MANAGER}, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, parser::{flag_parser, pitch_parser, pitch_string_to_cents, tempo_parser}, reflect_pad_2d, stft::stft_core},
+    utils::{cache::CACHE_MANAGER, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, parser::{flag_parser, pitch_parser, pitch_string_to_cents, tempo_parser}, reflect_pad_2d, stft::stft_core},
 };
 const SR: f32 = SAMPLE_RATE as f32;
 const THOP_ORIGIN: f32 = ORIGIN_HOP_SIZE as f32 / SR;
