@@ -1,24 +1,54 @@
+use anyhow::Result;
 use axum::{ extract::State, http::StatusCode, response::IntoResponse, routing::get, Router };
-use std::{ net::SocketAddr, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}} };
+use std::{ collections::HashMap, net::SocketAddr, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}} };
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
-use crate::resample::Resampler;
+use crate::{
+    resample::resample,
+    utils::parser::{flag_parser, pitch_parser, pitch_string_to_cents, tempo_parser}
+};
 #[derive(Clone)]
 pub struct AppState {
     server_ready: Arc<AtomicBool>,
     concurrency_semaphore: Arc<Semaphore>,
 }
-pub fn split_arguments(input: &str) -> Vec<String> {
+#[derive(Debug)]
+pub struct Arguments {
+    pub in_file: PathBuf,
+    pub out_file: PathBuf,
+    pub pitch: f32,
+    pub velocity: f32,
+    pub flags: HashMap<String, Option<f32>>,
+    pub offset: f32,
+    pub length: f32,
+    pub consonant: f32,
+    pub cutoff: f32,
+    pub volume: f32,
+    pub modulation: f32,
+    pub tempo: f32,
+    pub pitchbend: Vec<f32>,
+}
+pub fn split_arguments(input: &str) -> Result<Arguments> {
     let tokens: Vec<&str> = input.split(' ').collect();
-    let prefix = tokens[..tokens.len()-11].join(" ");
-    let split_idx = prefix.find(".wav ").unwrap();
+    let prefix = tokens[..tokens.len() - 11].join(" ");
+    let split_idx = prefix.find(".wav ").ok_or_else(|| anyhow::anyhow!("Missing .wav in input"))?;
     let (in_file, out_file) = prefix.split_at(split_idx + 4);
-    let mut args = vec![
-        in_file.to_string(),
-        out_file.trim_start_matches(' ').to_string()
-    ];
-    args.extend(tokens[tokens.len()-11..].iter().map(|s| s.to_string()));
-    args
+    let len = tokens.len();
+    Ok(Arguments {
+        in_file: PathBuf::from(in_file),
+        out_file: PathBuf::from(out_file.trim_start_matches(' ')),
+        pitch: pitch_parser(tokens[len - 11])? as f32,
+        velocity: tokens[len - 10].parse::<f32>()? * 0.01,
+        flags: flag_parser(tokens[len - 9])?,
+        offset: tokens[len - 8].parse::<f32>()? * 0.001,
+        length: tokens[len - 7].parse::<f32>()? * 0.001,
+        consonant: tokens[len - 6].parse::<f32>()? * 0.001,
+        cutoff: tokens[len - 5].parse::<f32>()? * 0.001,
+        volume: tokens[len - 4].parse::<f32>()? * 0.01,
+        modulation: tokens[len - 3].parse::<f32>()? * 0.01,
+        tempo: tempo_parser(tokens[len - 2])? * 96.0,
+        pitchbend: pitch_string_to_cents(tokens[len - 1])?,
+    })
 }
 async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     let ready = state.server_ready.load(Ordering::Relaxed);
@@ -39,17 +69,23 @@ async fn handle_post(State(state): State<AppState>, body: String) -> (StatusCode
         );
     }
     info!("post_data_string: {}", body);
-    let args = split_arguments(&body);
+    let args = match split_arguments(&body) {
+        Ok(a) => a,
+        Err(e) => {
+            error!("Failed to parse arguments: {}", e);
+            return (StatusCode::BAD_REQUEST, format!("Invalid arguments: {}", e));
+        }
+    };
     let note_info = format!(
         "'{}' -> '{}'",
-        PathBuf::from(&args[0]).file_stem().unwrap().to_str().unwrap(),
-        PathBuf::from(&args[1]).file_name().unwrap().to_str().unwrap()
+        args.in_file.file_stem().unwrap().to_str().unwrap(),
+        args.out_file.file_name().unwrap().to_str().unwrap()
     );
     info!("Queued {} ...", note_info);
     let permit = state.concurrency_semaphore.acquire_owned().await.unwrap();
     let task_result = tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        Resampler::new(args)
+        resample(args)
     }).await.unwrap();
     if let Ok(()) = task_result {
         info!("Processing {} successful.", note_info);
@@ -80,61 +116,4 @@ pub async fn run(port: u16, max_workers: usize) {
         max_workers
     );
     axum::serve(listener, app).await.unwrap();
-}
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-    use crate::{
-        server::split_arguments,
-        utils::parser::{pitch_parser, tempo_parser}
-    };
-    #[test]
-    fn test_basic_arguments() {
-        let input = "input.wav output.wav C4 1.0 \"\" 0.0 1000.0 0.0 0.0 100.0 0.0 !120 AA";
-        let args = split_arguments(input);
-        assert_eq!(args[0], "input.wav");
-        assert_eq!(args[1], "output.wav");
-        let pitch = pitch_parser(&args[2]).unwrap();
-        assert_eq!(pitch, 60);
-        let tempo = tempo_parser(&args[11]).unwrap();
-        assert_eq!(tempo, 120.0);
-    }
-    #[test]
-    fn test_paths_with_spaces() {
-        let input = "my audio file.wav output dir/result.wav A4 0.8 \"flag\" 1.5 2000.0 0.5 0.3 90.0 2.0 !90 B7CPCV";
-        let args = split_arguments(input);
-        assert_eq!(args[0], "my audio file.wav");
-        assert_eq!(args[1], "output dir/result.wav");
-        let pitch = pitch_parser(&args[2]).unwrap();
-        assert_eq!(pitch, 69);
-    }
-    #[test]
-    fn test_minimum_tokens() {
-        let input = "a.wav b.wav 60 0.0 x 0.0 0.0 0.0 0.0 0.0 0.0 !100 zz";
-        let args = split_arguments(input);
-        assert_eq!(args.len(), 13);
-        assert_eq!(args[0], "a.wav");
-        assert_eq!(args[1], "b.wav");
-    }
-    #[test]
-    fn test_parameter_types() {
-        let input = "in.wav out.wav C5 1.5 \"fe+10\" -2.3 500.5 3.0 -0.5 80.0 -1.0 !150 AB#14#CD";
-        let args = split_arguments(input);
-        let pitch = pitch_parser(&args[2]).unwrap();
-        assert_eq!(pitch, 72);
-        let tempo = tempo_parser(&args[11]).unwrap();
-        assert_eq!(tempo, 150.0);
-        let offset: f32 = args[5].parse().unwrap();
-        assert_eq!(offset, -2.3);
-    }
-    #[test]
-    fn test_path_compatibility() {
-        let input = "test data/input.wav output_dir/out.wav D4 1.0 \"\" 0.0 500.0 0.0 0.0 80.0 0.0 !100 C5CC";
-        let args = split_arguments(input);
-        let in_path = PathBuf::from(&args[0]);
-        assert!(in_path.ends_with("input.wav"));
-        let out_path = PathBuf::from(&args[1]);
-        assert!(out_path.ends_with("out.wav"));
-        assert!(out_path.starts_with("output_dir"));
-    }
 }

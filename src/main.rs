@@ -19,7 +19,7 @@ fn init_logging() -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     init_logging()?;
-    model::initialize_models();
+    model::initialize_models(HIFI_CONFIG.max_workers);
     tracing::info!("starting_server_on_0.0.0.0:{}",8572);
     server::run(8572, HIFI_CONFIG.max_workers).await;
     Ok(())
