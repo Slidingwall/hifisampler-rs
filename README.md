@@ -17,8 +17,18 @@ This project is based on [StrayCat-rs](https://github.com/UtaUtaUtau/straycat-rs
 The vision of this project is to unofficially migrate hifisampler to the Rust programming language, just like its upstream project StrayCat, in order to reduce its dependencies, software size, or improve its speed. Due to differences in the programming languages and libraries used, this project may not 100% replicate all functions of hifisampler, and the generated results may also differ from those of hifisampler.  
 本项目的愿景是将hifisampler非官方地与其上游项目StrayCat一样迁移至rust语言中，以减少其依赖项、软件体积或提升其速度。由于所采用的编程语言和库不同，本项目可能不会100%复现hifisampler的全部功能，生成结果也可能与hifisampler有所出入。  
 
-During the refactoring process, this project has also made several modifications to the original workflow of hifisampler. Examples include redundant STFT/ISTFT transformations and repeated logarithmic/exponential conversions during feature generation. Errors introduced while optimizing the computational pipeline may cause discrepancies against the processing results of the original Python implementation. Additionally, cache file sizes have also been optimized.  
-在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动。例如在生成特征时重复的stft/istft转换和重复的对数/指数转换等。在优化计算流程中引入的误差可能使其与原来的Python处理结果有所不同。此外，对缓存文件的体积也进行了一定的优化。  
+## Difference 差异
+During the refactoring process, this project has also made several modifications to the original workflow of hifisampler. Errors introduced while optimizing the computational pipeline may cause discrepancies against the processing results of the original Python implementation.  
+在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动。在优化计算流程中引入的误差可能使其与原来的Python处理结果有所不同。  
+ 
+| Item | Python Version | Rust Version |
+|:---:|:---:|:---:|
+| Features cache / 特征缓存 | 32 bit float npz / 32位浮点NPZ | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
+| HNSEP cache / HNSEP缓存| 32 bit float PyTorch tensor / 32位浮点PyTorch张量 | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
+| STFT | 3 times for HNSEP model, mel spec and tension / 对HNSEP模型、mel谱与张力处理进行3次STFT | Only once for all processes / 仅对所有流程进行1次STFT |
+| ISTFT | 2 times for HNSEP model and tension / 对HNSEP模型和张力处理进行2次ISTFT | No ISTFT / 无ISTFT | 
+| Logarithmic conversion / 对数转换 | 2 times for mel spec and tension / 对mel谱和张力处理进行2次对数转换 | Only once for mel spec / 仅对mel谱进行1次对数转换 |
+| Exponential conversion / 指数转换 | 1 times for tension / 对张力处理进行1次指数转换 | No exponential conversion / 无指数转换 |
 
 ## Using 使用
 
@@ -36,7 +46,7 @@ For using, you also need these ONNX model: [pc-nsf-hifigan](https://github.com/o
 使用时，您还需要[pc-nsf-hifigan](https://github.com/openvpi/vocoders/releases/tag/pc-nsf-hifigan-44.1k-hop512-128bin-2025.02)(或[Kouon Vocoder](https://github.com/Kouon-Project/Kouon_Vocoder/releases/tag/V2.0.0)，`pc-mini-nsf`版)和hnsep这两个ONNX模型。上游项目hifisampler没有发布ONNX格式的hnsep模型，因此[这里](https://wwbpi.lanzouv.com/igZpn3g2eqxa)有一个我自己导出的临时替代版。它们应位于与服务器端同目录的`./model/`文件夹内，但您也可以通过修改`hificonfig.ini`来自定义模型的位置。  
 
 To reduce development costs, we have **abandoned support for PyTorch models**.  
-为了节约开发成本，我们**放弃了对PyTorch模型的支持**。  
+为了节约开发成本，我们**放弃了对PyTorch模型的支持**。 
 
 ## How to compile
  **Note**: By the nature of an UTAU resampler, it is only ideal to build this program in Windows.
