@@ -20,34 +20,48 @@ fn highpass_coeffs(sr: f32, cutoff: f32) -> Coefficients<f32> {
 pub fn growl(audio: &mut Vec<f32>, sr: f32, freq: f32, strength: f32) {
     let len = audio.len();
     if len == 0 || strength <= 0.0 || freq <= 0.0 { return; }
-    let orig = std::mem::take(audio);
-    let mut high = orig.clone();
+    let mut high = audio.clone();
     forward_backward_filter(&mut high, &mut DirectForm1::new(highpass_coeffs(sr, 400.0)), 2);
-    let mut out = orig.iter().zip(&high).map(|(o, h)| o - h).collect::<Vec<_>>();
+    for (a, h) in audio.iter_mut().zip(high.iter()) { *a = *a - *h; }
     let cycle = (sr / freq) as usize;
     let half = cycle / 2;
+    let factor_up = 2.0f32.powf(strength / 12.0);
+    let factor_down = 2.0f32.powf(-strength / 12.0);
     let mut buf: Vec<f32> = (0..len)
-        .map(|n| if n % cycle < half { 1.0 } else { -1.0 })
-        .map(|lfo| 2.0f32.powf(lfo * strength / 12.0))
+        .map(|n| if n % cycle < half { factor_up } else { factor_down })
         .collect();
     let mean = buf.iter().sum::<f32>() / len as f32;
     let init = buf[0];
     let mut cumulative = 0.0;
-    buf.iter_mut().enumerate().for_each(|(i, v)| {
+    for (i, v) in buf.iter_mut().enumerate() {
         cumulative += *v;
         *v = cumulative - init - i as f32 * mean;
-    });
+    }
     if len > 100 {
         forward_backward_filter(&mut buf, &mut DirectForm1::new(highpass_coeffs(sr, 20.0)), 1);
     }
-    buf.iter_mut().enumerate().for_each(|(i, v)| *v = (i as f32 + *v).clamp(0.0, len as f32 - 1.0));
-    let mut modulated = buf.iter().map(|&idx| {
-        let f = idx.floor() as usize;
-        if f >= len - 1 { high[len-1] } else { lerp(high[f], high[f+1], idx.fract()) }
-    }).collect::<Vec<_>>();
-    let rms_h = (high.iter().map(|&x| x*x).sum::<f32>() / len as f32).sqrt();
-    let rms_m = (modulated.iter().map(|&x| x*x).sum::<f32>() / len as f32).sqrt();
-    if rms_m > 1e-10 { modulated.iter_mut().for_each(|x| *x *= rms_h / rms_m); }
-    out.iter_mut().zip(&modulated).for_each(|(o, m)| *o += m);
-    *audio = out;
+    for (i, v) in buf.iter_mut().enumerate() {
+        let idx = i as f32 + *v;
+        let idx_clamped = idx.clamp(0.0, len as f32 - 1.0);
+        let f = idx_clamped.floor() as usize;
+        let frac = idx_clamped.fract();
+        let modulated_val = if f >= len - 1 {
+            high[len - 1]
+        } else {
+            lerp(high[f], high[f + 1], frac)
+        };
+        *v = modulated_val;
+    }
+    let mut sum_h_sq = 0.0;
+    let mut sum_m_sq = 0.0;
+    for (h, m) in high.iter().zip(buf.iter()) {
+        sum_h_sq += h * h;
+        sum_m_sq += m * m;
+    }
+    let rms_h = (sum_h_sq / len as f32).sqrt();
+    let rms_m = (sum_m_sq / len as f32).sqrt();
+    let scale = if rms_m > 1e-10 { rms_h / rms_m } else { 0.0 };
+    for (a, m) in audio.iter_mut().zip(buf.iter()) {
+        *a += m * scale;
+    }
 }

@@ -46,7 +46,7 @@ pub fn split_arguments(input: &str) -> Result<Arguments> {
         cutoff: tokens[len - 5].parse::<f32>()? * 0.001,
         volume: tokens[len - 4].parse::<f32>()? * 0.01,
         modulation: tokens[len - 3].parse::<f32>()? * 0.01,
-        tempo: tempo_parser(tokens[len - 2])? * 96.0,
+        tempo: tempo_parser(tokens[len - 2])?,
         pitchbend: pitch_string_to_cents(tokens[len - 1])?,
     })
 }

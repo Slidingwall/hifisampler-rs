@@ -1,65 +1,100 @@
 use ndarray::{Array2, Axis, azip};
-use std::{cmp::Ordering, f32::{EPSILON, consts::PI}};
-pub fn akima(x: &[f32], y: &[f32], t: &[f32]) -> Vec<f32> {
+use std::f32::consts::PI;
+pub fn akima(y: &[f32], xi: &[f32]) -> Vec<f32> {
     let n = y.len();
-    let mut out = Vec::with_capacity(t.len());
-    match n {
-        0 => { out.resize(t.len(), 0.0); return out; }
-        1 => { out.resize(t.len(), y[0]); return out; }
-        2 => {
-            let k = (y[1] - y[0]) / (x[1] - x[0]);
-            t.iter().for_each(|&p| out.push(if p <= x[0] { y[0] } else if p >= x[1] { y[1] } else { y[0] + (p - x[0]) * k }));
-            return out;
-        }
-        _ => {}
+    let mut out = Vec::with_capacity(xi.len());
+    if n == 0 {
+        out.resize(xi.len(), 0.0);
+        return out;
     }
+    if n == 1 {
+        out.resize(xi.len(), y[0]);
+        return out;
+    }
+    if n == 2 {
+        let k = y[1] - y[0];
+        for &p in xi {
+            out.push(y[0] + p.clamp(0.0, 1.0) * k);
+        }
+        return out;
+    }
+    let left_extrap = 3.0 * y[1] - 2.0 * y[0] - y[2];
+    let right_extrap = 2.0 * y[n-1] - 3.0 * y[n-2] + y[n-3];
+    let slope = |idx: i32| -> f32 {
+        if idx < 0 {
+            left_extrap
+        } else if idx >= (n - 1) as i32 {
+            right_extrap
+        } else {
+            y[idx as usize + 1] - y[idx as usize]
+        }
+    };
     let mut m = vec![0.0; n];
     for i in 0..n {
-        let w1 = (((if i == n-1 { 2.0 * y[n-1] - y[n-3] } else if i == n-2 { 2.0 * y[n-1] - y[n-2] } else { y[i+2] }) - (if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] })) - ((if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] }) - y[i])).abs();
-        let w2 = ((y[i] - (if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] })) - ((if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] }) - (if i == 0 { 2.0 * y[0] - y[2] } else if i == 1 { 2.0 * y[0] - y[1] } else { y[i-2] }))).abs();
+        let i32 = i as i32;
+        let s0 = slope(i32 - 2);
+        let s1 = slope(i32 - 1);
+        let s2 = slope(i32);
+        let s3 = slope(i32 + 1);
+        let w1 = (s3 - s2).abs();
+        let w2 = (s1 - s0).abs();
         m[i] = if w1 + w2 < 1e-12 {
-            ((y[i] - (if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] })) + ((if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] }) - y[i])) * 0.5
+            0.5 * (s1 + s2)
         } else {
-            (w1 * (y[i] - (if i == 0 { 2.0 * y[1] - y[2] } else if i == 1 { y[0] } else { y[i-1] })) + w2 * ((if i == n-1 { 2.0 * y[n-1] - y[n-2] } else if i == n-2 { y[n-1] } else { y[i+1] }) - y[i])) / (w1 + w2)
+            (w1 * s1 + w2 * s2) / (w1 + w2)
         };
     }
-    let coeffs: Vec<_> = (0..n-1).map(|i| (y[i], m[i]*(x[i+1]-x[i]), 3.*(y[i+1]-y[i])-2.*m[i]*(x[i+1]-x[i])-m[i+1]*(x[i+1]-x[i]), 2.*(y[i]-y[i+1])+m[i]*(x[i+1]-x[i])+m[i+1]*(x[i+1]-x[i]), x[i+1]-x[i])).collect();
-    let (x0, xn) = (x[0], x[n-1]);
-    let mut idx = 0;
-    for &p in t {
-        if p <= x0 {
+    let coeffs: Vec<_> = (0..n - 1)
+        .map(|i| {
+            let dy = y[i + 1] - y[i];
+            let m0 = m[i];
+            let m1 = m[i + 1];
+            (y[i], m0, 3.0 * dy - 2.0 * m0 - m1, -2.0 * dy + m0 + m1)
+        })
+        .collect();
+    let last_idx = (n - 1) as f32;
+    let mut seg = 0;
+    for &p in xi {
+        if p <= 0.0 {
             out.push(y[0]);
-        } else if p >= xn {
-            out.push(y[n-1]);
+        } else if p >= last_idx {
+            out.push(y[n - 1]);
         } else {
-            while idx + 1 < x.len() && x[idx + 1] < p { idx += 1; }
-            let (c0, c1, c2, c3, dx) = coeffs[idx];
-            out.push(c0 + ((p - x[idx])/dx) * (c1 + ((p - x[idx])/dx) * (c2 + ((p - x[idx])/dx) * c3)));
+            while seg + 1 < n - 1 && (seg + 1) as f32 <= p {
+                seg += 1;
+            }
+            let u = p - seg as f32;
+            let (c0, c1, c2, c3) = coeffs[seg];
+            out.push(c0 + u * (c1 + u * (c2 + u * c3)));
         }
     }
     out
 }
-pub fn interp1d(x: &[f32], y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
-    let mut res = Array2::zeros((y.nrows(), xi.len()));
+pub fn interp1d(y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
     let n_rows = y.nrows();
     let n_cols = y.ncols();
-    if n_cols == 0 { return res; }
-    let x_first = x[0];
-    let x_last = x[n_cols - 1];
-    azip!((mut col in res.axis_iter_mut(Axis(1)), &xv in xi) {
-        if xv >= x_last { col.assign(&y.column(n_cols - 1)); return; }
-        if xv <= x_first { col.assign(&y.column(0)); return; }
-        let i = x.binary_search_by(|&v| v.partial_cmp(&xv).unwrap_or(Ordering::Greater))
-            .unwrap_or_else(|i| i.saturating_sub(1))
-            .clamp(0, n_cols - 2);
-        let dx = x[i + 1] - x[i];
-        let t = if dx.abs() < EPSILON { 0.0 } else { (xv - x[i]) / dx };
+    let mut res = Array2::zeros((n_rows, xi.len()));
+    if n_cols == 0 {
+        return res;
+    }
+    let last_idx = (n_cols - 1) as f32;
+    for (mut out_col, &xv) in res.axis_iter_mut(Axis(1)).zip(xi) {
+        if xv <= 0.0 {
+            out_col.assign(&y.column(0));
+            continue;
+        }
+        if xv >= last_idx {
+            out_col.assign(&y.column(n_cols - 1));
+            continue;
+        }
+        let i = xv.floor() as usize;
+        let frac = xv - i as f32;
         let y0 = y.column(i);
         let y1 = y.column(i + 1);
         for r in 0..n_rows {
-            col[r] = y0[r] + (y1[r] - y0[r]) * t;
+            out_col[r] = y0[r] + (y1[r] - y0[r]) * frac;
         }
-    });
+    }
     res
 }
 pub fn spec_interp(
@@ -84,7 +119,8 @@ pub fn spec_interp(
                     let weight = if x == 0.0 {
                         1.0
                     } else if x.abs() < 3.0 {
-                        (PI * x).sin() * (PI * x / 3.0).sin() / (PI * PI * x * x / 3.0)
+                        let pix = PI * x;
+                        (pix.sin() * (pix / 3.0).sin()) / (pix * pix * (PI / 3.0))
                     } else {
                         0.0
                     };

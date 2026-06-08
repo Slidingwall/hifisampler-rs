@@ -12,7 +12,7 @@ pub fn lerp(a: f32, b: f32, t: f32) -> f32 {
 }
 #[inline(always)]
 pub fn midi_to_hz(x: f32) -> f32 {
-    440. * (x / 12. - 5.75).exp2()
+    2.0f32.powf(x / 12.0) * 8.1757989156437073336828122976033
 }
 pub fn reflect_pad_2d(arr: ArrayView2<f32>, pad: usize) -> Array2<f32> {
     let (rows, n) = arr.dim();

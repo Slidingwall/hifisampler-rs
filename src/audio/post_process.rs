@@ -5,13 +5,17 @@ use crate::{
     utils::{reflect_pad_1d}, 
 };
 pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32) {
-    let orig_max = spec.iter().fold(0.0f32, |max, &val| max.max(val));
+    let mut orig_max = 0.0f32;
+    let mut f_max = 0.0f32;
     spec.axis_iter_mut(Axis(0)).enumerate().for_each(|(j, mut bin)| {
         let coeff = b * (1.0 - j as f32 * SAMPLE_RATE as f32 / (FFT_SIZE / 1500 + 3000) as f32);
         let scale = coeff.clamp(-2.0, 2.0).exp();
-        bin.iter_mut().for_each(|v| *v *= scale);
+        for v in bin.iter_mut() {
+            if *v > orig_max { orig_max = *v; }
+            *v *= scale;
+            if *v > f_max { f_max = *v; }
+        }
     });
-    let f_max = spec.iter().fold(0.0f32, |max, &val| max.max(val));
     let gain = (orig_max / f_max) * ((-b / 15.0).clamp(0.0, 0.33) + 1.0);
     spec.mapv_inplace(|x| x * gain);
 }
@@ -28,39 +32,60 @@ pub fn loudness_norm(
         let fl = (0.02 * sample_rate) as usize;
         let hl = (0.01 * sample_rate) as usize;
         if fl <= orig_len {
-            let (mut start, mut end) = (None, 0);
-            (0..=orig_len - fl).step_by(hl)
-                .filter(|&i| {
-                    let f = &wave[i..i+fl];
-                    (f.iter().map(|&x| x.powi(2)).sum::<f32>() / fl as f32).sqrt() >= 1e-10 
-                    && 20.0 * (f.iter().map(|&x| x.powi(2)).sum::<f32>() / fl as f32).sqrt().log10() > HIFI_CONFIG.silence_threshold
-                })
-                .for_each(|i| { start.get_or_insert(i); end = i; });
-            if let Some(s) = start {
-                val_start = s;
-                val_end = ((end / hl + 11) * hl + fl).min(orig_len);
+            let n_windows = (orig_len - fl) / hl + 1;
+            let energy_thresh = 10.0f32.powf(HIFI_CONFIG.silence_threshold / 10.0) * fl as f32;
+            let mut sum_sq: f32 = wave[0..fl].iter().map(|&x| x * x).sum();
+            let mut start_idx = if sum_sq > energy_thresh { Some(0) } else { None };
+            let mut end_idx = 0;
+            for i in 1..n_windows {
+                let prev_start = (i - 1) * hl;
+                let new_start = i * hl;
+                for j in prev_start..new_start {
+                    sum_sq -= wave[j] * wave[j];
+                }
+                let prev_end = prev_start + fl;
+                let new_end = new_start + fl;
+                for j in prev_end..new_end {
+                    sum_sq += wave[j] * wave[j];
+                }
+                if sum_sq > energy_thresh {
+                    start_idx.get_or_insert(i);
+                    end_idx = i;
+                }
+            }
+            if let Some(s) = start_idx {
+                val_start = s * hl;
+                val_end = ((end_idx + 11) * hl + fl).min(orig_len);
                 need_restore = true;
             }
         }
     }
     let val_len = val_end - val_start;
     if val_len == 0 { return; }
-    if val_len < (0.4 * sample_rate) as usize {
-        reflect_pad_1d(wave, 0, (0.4 * sample_rate) as usize - val_len);
-    }
+    let min_len = (0.4 * sample_rate) as usize;
+    if val_len < min_len { reflect_pad_1d(wave, 0, min_len - val_len); }
+    let measure_end = (val_start + val_len.max(min_len)).min(wave.len());
     let mut meter = ChannelLoudnessMeter::new(sample_rate as u32);
-    meter.push(wave[val_start..(val_start + val_len.max((0.4 * sample_rate) as usize)).min(wave.len())].iter().copied());
-    let gain = 10.0f32.powf((target - gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs()) * norm_strength as f32 * 0.0005);
-    wave[val_start..val_end].iter_mut().for_each(|x| *x *= gain);
+    meter.push(wave[val_start..measure_end].iter().copied());
+    let gain = 10.0f32.powf(
+        (target - gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs()) * norm_strength as f32 * 0.0005,
+    );
     if need_restore {
+        let fade_len = ((0.2 * sample_rate) as usize).min(val_len >> 2);
+        let fade_scale = 1.0 / (fade_len.max(1) - 1) as f32;
+        wave[val_start..val_end]
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, x)| {
+                *x *= gain;
+                if i >= val_len - fade_len {
+                    *x *= (i - (val_len - fade_len)) as f32 * fade_scale;
+                }
+            });
         wave[..val_start].fill(0.0);
         wave[val_end..].fill(0.0);
-        let fade_len = ((0.2 * sample_rate) as usize).min(val_len >> 2);
-        wave[val_start..val_end].iter_mut().enumerate().for_each(|(i, x)| {
-            *x *= if i >= val_len - fade_len { 
-                (i - (val_len - fade_len)) as f32 / (fade_len - 1).max(1) as f32 
-            } else { 1.0 };
-        });
+    } else {
+        wave[val_start..val_end].iter_mut().for_each(|x| *x *= gain);
     }
     wave.truncate(orig_len);
     wave.iter_mut().for_each(|x| *x = x.clamp(-1.0, 1.0));
