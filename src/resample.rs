@@ -22,9 +22,9 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
     if let Some(feats) = CACHE_MANAGER.load_features_cache(&features_path, ignore_cache) { return Ok(feats); }
     info!("Generating features: {}", features_path.display());
     let wave = read_audio(&args.in_file)?;
-    let spec_mix = stft_core(&wave, FFT_SIZE, HOP_SIZE);
-    let dim = spec_mix.0.dim();
-    let mut spec_amp = Array2::zeros(dim);
+    let spec_mix = stft_core(&wave, FFT_SIZE, HOP_SIZE); 
+    let (_, freq_bins, frames) = spec_mix.dim(); 
+    let mut spec_amp = Array2::zeros((freq_bins, frames));
     if tension != 0.0 || breath != voicing {
         let (bre, voi) = (breath.clamp(0.0,500.0)*0.01, voicing.clamp(0.0,150.0)*0.01);
         let seg = CACHE_MANAGER.load_hnsep_cache(&args.in_file.with_file_name(format!("{fname}.hnsep.bin")), ignore_cache)
@@ -34,16 +34,18 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
                 s
             });
         let mut tensed = Array2::zeros(seg.dim());
-        azip!((t in &mut tensed, sm in &seg) {*t = sm * voi;});
-        if tension != 0.0 { pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02); }
-        azip!((o in &mut spec_amp, cr in &spec_mix.0, ci in &spec_mix.1, sm in &seg, t in &tensed) {
-            let mix_mag = cr.hypot(*ci);
+        azip!((t in &mut tensed, sm in &seg) { *t = sm * voi; });
+        if tension != 0.0 {
+            pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02);
+        }
+        azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg, t in &tensed) {
+            let mix_mag = r.hypot(i);
             *o = (bre * (mix_mag - sm) + t).abs();
         });
     } else {
         let factor = breath * 0.01;
-        azip!((o in &mut spec_amp, r in &spec_mix.0, i in &spec_mix.1) {
-            *o = r.hypot(*i) * factor;
+        azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..])) {
+            *o = r.hypot(i) * factor;
         });
     }
     let scale = 512f32.max(spec_amp.iter().fold(0.0, |m, &x| m.max(x))).recip() * 512.0;
@@ -59,7 +61,7 @@ pub fn resample(args: Arguments) -> Result<()> {
         return Ok(());
     }
     info!("Modulation: {:.1}, Scale: {:.1}, Mel shape: {:?}", args.modulation, scale, mel_origin.dim());
-    let vel = 2.0f32.powf(1.0 - args.velocity);
+    let vel = (1.0 - args.velocity).exp2();
     let end = if args.cutoff < 0.0 {
         args.offset - args.cutoff
     } else {
@@ -95,9 +97,8 @@ pub fn resample(args: Arguments) -> Result<()> {
     let idx_stretched: Vec<f32> = stretched_t_mel.iter()
         .map(|&t| (stretch(t) / THOP_ORIGIN - 0.5).clamp(0.0, (mel_origin.ncols() - 1) as f32))
         .collect();
-    info!("Stretched time axis length: {}", idx_stretched.len());
-    let mel_render = interp1d(&mel_origin, &idx_stretched);
-    let n_frames = mel_render.ncols();
+    let n_frames = idx_stretched.len();
+    info!("Stretched time axis length: {}", n_frames);
     let mut pitch: Vec<f32> = args.pitchbend.iter().map(|&pb| pb + args.pitch).collect();
     if let Some(&t_flag) = args.flags.get("t").and_then(|x| x.as_ref()) {
         pitch.iter_mut().for_each(|p| *p += t_flag * 0.01);
@@ -115,29 +116,27 @@ pub fn resample(args: Arguments) -> Result<()> {
         .collect();
     let pitch_render = akima(&pitch, &idx_pitch_clamped);
     let f0_render: Vec<f32> = pitch_render.iter().map(|&x| midi_to_hz(x)).collect();
+    let mel_render = interp1d(&mel_origin, &idx_stretched);
     let mut render = get_vocoder().lock().unwrap().run(mel_render, f0_render);
     render.drain(((new_end * SR).min(render.len() as f32) as usize)..);
     render.drain(..((new_start * SR).max(0.0) as usize));
-    if let Some(&a_flag) = args.flags.get("A").and_then(|x| x.as_ref()) {
-        let a_clamped = a_flag.clamp(-100.0, 100.0) * 1e-4;
+    if let Some(&a) = args.flags.get("A").and_then(|x| x.as_ref()) {
+        let a = a.clamp(-100.,100.)*1e-4;
         let n = pitch_render.len();
-        let mut pitch_derivative = vec![0.0; n];
-        if n > 1 {
-            pitch_derivative[0] = pitch_render[1] - pitch_render[0];
-            for i in 1..n - 1 {
-                pitch_derivative[i] = (pitch_render[i + 1] - pitch_render[i - 1]) * 0.5;
-            }
-            pitch_derivative[n - 1] = pitch_render[n - 1] - pitch_render[n - 2];
+        let mut g = vec![0.; n];
+        if n>1 {
+            g[0]=pitch_render[1]-pitch_render[0];
+            for i in 1..n-1{g[i]=(pitch_render[i+1]-pitch_render[i-1])*0.5;}
+            g[n-1]=pitch_render[n-1]-pitch_render[n-2];
         }
-        let mut gain_arr = Array2::from_shape_vec((1, n), pitch_derivative).unwrap();
-        gain_arr.mapv_inplace(|d| 5.0f32.powf(a_clamped * d));
-        let start_idx = new_start / THOP;
-        let step_idx = (new_end - new_start) / (render.len() as f32 * THOP);
-        let idx_time: Vec<f32> = (0..render.len())
-            .map(|i| start_idx + i as f32 * step_idx)
-            .collect();
-        let gain_interp = interp1d(&gain_arr, &idx_time);
-        azip!((s in &mut render, g in gain_interp.row(0)) { *s *= g; });
+        for d in &mut g{*d=5f32.powf(a**d);}
+        let last=(g.len()-1)as f32;
+        let step=(new_end-new_start)/(render.len()as f32*THOP);
+        let start=new_start/THOP;
+        for(i,s)in render.iter_mut().enumerate(){
+            let t=start+i as f32*step;
+            *s*=if t<=0.{g[0]}else if t>=last{g[last as usize]}else{let i0=t as usize;let f=t-i0 as f32;g[i0]+(g[i0+1]-g[i0])*f};
+        }
     }
     let mut new_max = 0.0f32;
     for x in render.iter_mut() {

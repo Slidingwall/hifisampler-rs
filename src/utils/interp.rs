@@ -73,26 +73,27 @@ pub fn akima(y: &[f32], xi: &[f32]) -> Vec<f32> {
 pub fn interp1d(y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
     let n_rows = y.nrows();
     let n_cols = y.ncols();
-    let mut res = Array2::zeros((n_rows, xi.len()));
+    let mut res = Array2::zeros((xi.len(), n_rows));
     if n_cols == 0 {
         return res;
     }
     let last_idx = (n_cols - 1) as f32;
-    for (mut out_col, &xv) in res.axis_iter_mut(Axis(1)).zip(xi) {
+    for (i, &xv) in xi.iter().enumerate() {
+        let mut out_row = res.row_mut(i);
         if xv <= 0.0 {
-            out_col.assign(&y.column(0));
+            out_row.assign(&y.column(0));
             continue;
         }
         if xv >= last_idx {
-            out_col.assign(&y.column(n_cols - 1));
+            out_row.assign(&y.column(n_cols - 1));
             continue;
         }
-        let i = xv.floor() as usize;
-        let frac = xv - i as f32;
-        let y0 = y.column(i);
-        let y1 = y.column(i + 1);
+        let col_idx = xv.floor() as usize;
+        let frac = xv - col_idx as f32;
+        let y0 = y.column(col_idx);
+        let y1 = y.column(col_idx + 1);
         for r in 0..n_rows {
-            out_col[r] = y0[r] + (y1[r] - y0[r]) * frac;
+            out_row[r] = y0[r] + (y1[r] - y0[r]) * frac;
         }
     }
     res

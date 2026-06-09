@@ -25,10 +25,9 @@ pub fn growl(audio: &mut Vec<f32>, sr: f32, freq: f32, strength: f32) {
     for (a, h) in audio.iter_mut().zip(high.iter()) { *a = *a - *h; }
     let cycle = (sr / freq) as usize;
     let half = cycle / 2;
-    let factor_up = 2.0f32.powf(strength / 12.0);
-    let factor_down = 2.0f32.powf(-strength / 12.0);
+    let factor_up = (strength / 12.0).exp2();
     let mut buf: Vec<f32> = (0..len)
-        .map(|n| if n % cycle < half { factor_up } else { factor_down })
+        .map(|n| if n % cycle < half { factor_up } else { 1.0 / factor_up })
         .collect();
     let mean = buf.iter().sum::<f32>() / len as f32;
     let init = buf[0];
