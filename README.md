@@ -13,8 +13,8 @@ The goal is to unofficially migrate hifisampler to Rust, just like its upstream 
 > 由于一些原因，我可能很长一段时间无法分出精力在此项目上。因此我决定先行公开半成品的代码，以期待来自其他开发者的支持。  
 
 ## Difference 差异
-During the refactoring process, this project has also made several modifications to the original workflow of hifisampler, such as merging redundant STFT/ISTFT calculations, unifying tensor layouts, etc. Due to differences in programming languages, libraries, and errors introduced while optimizing the computational pipeline, this project may cause discrepancies against the processing results of the original Python implementation.  
-在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动，如合并重复的STFT/ISTFT计算、统一张量布局等。由于所采用的编程语言和库不同，以及在优化计算流程中引入的误差，本项目的处理结果可能与原来的Python实现有所不同。  
+During the refactoring process, this project has also made several modifications to the original workflow of hifisampler, such as merging redundant STFT/ISTFT calculations, unifying tensor layouts, etc. Due to differences in programming languages, libraries, and potential errors introduced while optimizing the computational pipeline, this project may cause discrepancies against the processing results of the original Python implementation.  
+在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动，如合并重复的STFT/ISTFT计算、统一张量布局等。由于所采用的编程语言和库不同，以及在优化计算流程中可能引入的误差，本项目的处理结果可能与原来的Python实现有所不同。  
  
 Notable changes include:  
 主要改动包括：
@@ -22,7 +22,7 @@ Notable changes include:
 | Item | Python Version | Rust Version |
 |:---:|:---:|:---:|
 | Support model formats / 支持的模型格式| PyTorch and ONNX| Only ONNX |
-| Configuration file / 配置文件 | config.py, with vocoder‑hardcoded parameters / 含与声码器硬绑定的参数 | hificonfig.ini, without vocoder‑hardcoded parameters / 不含与声码器硬绑定的参数 |
+| Configuration file / 配置文件 | `config.py`, with vocoder‑hardcoded parameters / 含与声码器硬绑定的参数 | `hificonfig.ini`, without vocoder‑hardcoded parameters / 不含与声码器硬绑定的参数 |
 | Features cache / 特征缓存 | 32 bit float npz / 32位浮点NPZ | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
 | HNSEP cache / HNSEP缓存| 32 bit float PyTorch tensor / 32位浮点PyTorch张量 | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
 
