@@ -1,4 +1,4 @@
-use bs1770::{ChannelLoudnessMeter, gated_mean};
+use ebur128::{EbuR128, Mode};
 use ndarray::{Array2, Axis};
 use crate::{
     consts::{FFT_SIZE, HIFI_CONFIG, SAMPLE_RATE},
@@ -63,29 +63,36 @@ pub fn loudness_norm(
     let val_len = val_end - val_start;
     if val_len == 0 { return; }
     let min_len = (0.4 * sample_rate) as usize;
-    if val_len < min_len { reflect_pad_1d(wave, 0, min_len - val_len); }
+    if val_len < min_len {
+        reflect_pad_1d(wave, 0, min_len - val_len);
+    }
     let measure_end = (val_start + val_len.max(min_len)).min(wave.len());
-    let mut meter = ChannelLoudnessMeter::new(sample_rate as u32);
-    meter.push(wave[val_start..measure_end].iter().copied());
+    let audio_to_measure = &wave[val_start..measure_end];
+    let mut ebu = EbuR128::new(1, sample_rate as u32, Mode::I)
+        .expect("Failed to create EbuR128");
+    ebu.add_frames_f32(audio_to_measure)
+        .expect("Failed to add frames to EbuR128");
+    let loudness_lkfs = ebu.loudness_global().unwrap_or(-150.0) as f32;
     let gain = 10.0f32.powf(
-        (target - gated_mean(meter.into_100ms_windows().as_ref()).loudness_lkfs()) * norm_strength as f32 * 0.0005,
+        (target - loudness_lkfs) * norm_strength as f32 * 0.0005,
     );
     if need_restore {
         let fade_len = ((0.2 * sample_rate) as usize).min(val_len >> 2);
         let fade_scale = 1.0 / (fade_len.max(1) - 1) as f32;
-        wave[val_start..val_end]
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, x)| {
-                *x *= gain;
-                if i >= val_len - fade_len {
-                    *x *= (i - (val_len - fade_len)) as f32 * fade_scale;
-                }
-            });
+        let vf =val_len - fade_len;
+        for (i, x) in wave[val_start..val_end].iter_mut().enumerate() {
+            let mut g = gain;
+            if i >= vf {
+                g *= (i - (vf)) as f32 * fade_scale;
+            }
+            *x *= g;
+        }
         wave[..val_start].fill(0.0);
         wave[val_end..].fill(0.0);
     } else {
-        wave[val_start..val_end].iter_mut().for_each(|x| *x *= gain);
+        for x in &mut wave[val_start..val_end] {
+            *x *= gain;
+        }
     }
     wave.truncate(orig_len);
     wave.iter_mut().for_each(|x| *x = x.clamp(-1.0, 1.0));

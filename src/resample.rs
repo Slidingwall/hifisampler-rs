@@ -3,7 +3,7 @@ use ndarray::{Array2, Axis, azip, concatenate, s};
 use tracing::info;
 use crate::{
     audio::{post_process::{loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio},
-    consts::{FFT_SIZE, HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE},
+    consts::{HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE},
     model::{get_remover, get_vocoder},
     utils::{cache::CACHE_MANAGER, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, reflect_pad_2d, stft::stft_core},
 };
@@ -22,7 +22,7 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
     if let Some(feats) = CACHE_MANAGER.load_features_cache(&features_path, ignore_cache) { return Ok(feats); }
     info!("Generating features: {}", features_path.display());
     let wave = read_audio(&args.in_file)?;
-    let spec_mix = stft_core(&wave, FFT_SIZE, HOP_SIZE); 
+    let spec_mix = stft_core(&wave); 
     let (_, freq_bins, frames) = spec_mix.dim(); 
     let mut spec_amp = Array2::zeros((freq_bins, frames));
     if tension != 0.0 || breath != voicing {
