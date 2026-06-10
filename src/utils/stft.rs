@@ -1,8 +1,7 @@
-use crate::consts::{FFT_SIZE, HOP_SIZE};
+use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::hann_window::HANN_WINDOW};
 use ndarray::{ArrayView1, Array3, Axis ,parallel::prelude::*};
 use once_cell::sync::Lazy;
 use phastft::{planner::PlannerR2c32, r2c_fft_f32_with_planner};
-use crate::utils::hann_window::HANN_WINDOW;
 static FFT_PLANNER: Lazy<PlannerR2c32> = Lazy::new(|| PlannerR2c32::new(FFT_SIZE));
 thread_local! {
     static REAL_BUF: std::cell::RefCell<[f32; FFT_SIZE]> = std::cell::RefCell::new([0.0; FFT_SIZE]);

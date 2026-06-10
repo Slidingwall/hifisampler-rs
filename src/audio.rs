@@ -1,4 +1,5 @@
 pub mod post_process;
+mod base_coeff;
 use crate::consts::SAMPLE_RATE;
 use anyhow::{anyhow, Result};
 use hound::{SampleFormat, WavSpec, WavWriter};

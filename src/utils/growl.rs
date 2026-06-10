@@ -1,5 +1,6 @@
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz};
-use crate::utils::lerp;
+use once_cell::sync::Lazy;
+use crate::{consts::SAMPLE_RATE, utils::lerp};
 fn forward_backward_filter<F: Biquad<f32>>(signal: &mut [f32], filter: &mut F, repeats: usize) {
     for _ in 0..repeats {
         signal.iter_mut().for_each(|s| *s = filter.run(*s));
@@ -9,20 +10,30 @@ fn forward_backward_filter<F: Biquad<f32>>(signal: &mut [f32], filter: &mut F, r
     }
 }
 #[inline(always)]
-fn highpass_coeffs(sr: f32, cutoff: f32) -> Coefficients<f32> {
+fn highpass_coeffs(cutoff: f32) -> Coefficients<f32> {
+    let sr = SAMPLE_RATE as f32;
     Coefficients::from_params(
         biquad::Type::HighPass,
         sr.hz(),
         cutoff.hz(),
-        1.0 / 2.0f32.sqrt()
-    ).expect("Failed to create highpass coefficients: invalid sample rate or cutoff frequency")
+        1.0 / 2.0f32.sqrt(),
+    )
+    .expect("Failed to create highpass coefficients")
 }
-pub fn growl(audio: &mut Vec<f32>, sr: f32, freq: f32, strength: f32) {
+static HIGH_400_COEFF: Lazy<Coefficients<f32>> = Lazy::new(|| highpass_coeffs(400.0));
+static HIGH_20_COEFF: Lazy<Coefficients<f32>> = Lazy::new(|| highpass_coeffs(20.0));
+pub fn growl(audio: &mut Vec<f32>, freq: f32, strength: f32) {
     let len = audio.len();
-    if len == 0 || strength <= 0.0 || freq <= 0.0 { return; }
+    if len == 0 || strength <= 0.0 || freq <= 0.0 {
+        return;
+    }
     let mut high = audio.clone();
-    forward_backward_filter(&mut high, &mut DirectForm1::new(highpass_coeffs(sr, 400.0)), 2);
-    for (a, h) in audio.iter_mut().zip(high.iter()) { *a = *a - *h; }
+    let mut filter_400 = DirectForm1::new(*HIGH_400_COEFF);
+    forward_backward_filter(&mut high, &mut filter_400, 2);
+    for (a, h) in audio.iter_mut().zip(high.iter()) {
+        *a = *a - *h;
+    }
+    let sr = SAMPLE_RATE as f32;
     let cycle = (sr / freq) as usize;
     let half = cycle / 2;
     let factor_up = (strength / 12.0).exp2();
@@ -37,7 +48,8 @@ pub fn growl(audio: &mut Vec<f32>, sr: f32, freq: f32, strength: f32) {
         *v = cumulative - init - i as f32 * mean;
     }
     if len > 100 {
-        forward_backward_filter(&mut buf, &mut DirectForm1::new(highpass_coeffs(sr, 20.0)), 1);
+        let mut filter_20 = DirectForm1::new(*HIGH_20_COEFF);
+        forward_backward_filter(&mut buf, &mut filter_20, 1);
     }
     for (i, v) in buf.iter_mut().enumerate() {
         let idx = i as f32 + *v;

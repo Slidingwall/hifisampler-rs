@@ -145,10 +145,10 @@ pub fn resample(args: Arguments) -> Result<()> {
         if abs > new_max { new_max = abs; }
     }
     if let Some(&hg) = args.flags.get("HG").and_then(|x| x.as_ref()) {
-        growl(&mut render, SR, 80.0, hg.clamp(-100.0, 100.0) * 0.01);
+        growl(&mut render, 80.0, hg.clamp(-100.0, 100.0) * 0.01);
     }
     if HIFI_CONFIG.wave_norm {
-        loudness_norm(&mut render, SR, -16.0,
+        loudness_norm(&mut render,  -16.0,
             args.flags.get("P").and_then(|x| x.as_ref()).map_or(100, |&p| p.clamp(-100.0, 100.0) as u8));
     }
     let mult = (if new_max > HIFI_CONFIG.peak_limit { HIFI_CONFIG.peak_limit / new_max } else { 1.0 }) * args.volume;
