@@ -7,12 +7,12 @@ edition = "2024"
 hound = "3.5.1"
 symphonia = "0.5.5" #Do not upgrade this!
 rubato = { version = "0.16.2", default-features = false } #Do not upgrade this!
-oxifft = { version = "0.3.2" , features = ["streaming"] }
+phastft = "0.4.0"
 ebur128 = "0.1.10"
 biquad = "0.6.0"
 
-ndarray = "0.17.2"
-regex = "1.12.3"
+ndarray ={version = "0.17.2" , features = ["rayon"]}
+regex = "1.12.4"
 
 ort = "=2.0.0-rc.11"
 
