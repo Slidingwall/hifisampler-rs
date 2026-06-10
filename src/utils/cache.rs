@@ -1,4 +1,4 @@
-use fs2::FileExt;
+use fs4::FileExt;
 use ndarray::Array2;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -48,7 +48,7 @@ impl CrossProcessLockManager {
         let lock_file = self.get_lock_file(path);
         let start = Instant::now();
         loop {
-            if let Ok(()) = (&*lock_file).try_lock_exclusive() {
+            if let Ok(()) = (&*lock_file).try_lock() {
                 return;
             }
             if start.elapsed() >= timeout {
