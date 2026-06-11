@@ -48,7 +48,7 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
             *o = r.hypot(i) * factor;
         });
     }
-    let scale = 512f32.max(spec_amp.iter().fold(0.0, |m, &x| m.max(x))).recip() * 512.0;
+    let scale = 256f32.max(spec_amp.iter().fold(0.0, |m, &x| m.max(x))).recip() * 256.0;
     spec_amp.mapv_inplace(|x| x * scale);
     let features = (mel(&spec_amp, gender.clamp(-600.0,600.0)*0.01), scale);
     CACHE_MANAGER.save_features_cache(&features_path, &features);
