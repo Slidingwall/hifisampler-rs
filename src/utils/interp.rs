@@ -121,7 +121,7 @@ pub fn spec_interp(
                         1.0
                     } else if x.abs() < 3.0 {
                         let pix = PI * x;
-                        (pix.sin() * (pix / 3.0).sin()) / (pix * pix * (PI / 3.0))
+                        (pix.sin() * (pix / 3.0).sin()) / (pix * pix)
                     } else {
                         0.0
                     };

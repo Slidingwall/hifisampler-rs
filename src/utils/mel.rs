@@ -19,8 +19,9 @@ pub fn mel(spec:&Array2<f32>,key_shift:f32)->Array2<f32>{
         let fs = (-key_shift /12.).exp2();
         let scaled = (FFT_SIZE as f32 * fs).round();
         let tf = scaled as usize /2 +1;
+        let factor = inf as f32 / tf as f32;
         let mut sf = spec_interp(spec,(tf.min(743),ot),Axis(0),|f| {
-            let x = f as f32 *(inf as f32/tf as f32);
+            let x = f as f32 * factor;
             (x.floor() as isize, x.fract())
         });
         sf.iter_mut().for_each(|v| *v = v.exp() * FFT_SIZE as f32 / scaled);
