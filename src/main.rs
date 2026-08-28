@@ -8,9 +8,7 @@ use anyhow::Result;
 use tokio;
 use tracing_subscriber::{fmt, prelude::*};
 use crate::consts::HIFI_CONFIG;
-#[cfg(not(target_env = "musl"))]
 use mimalloc::MiMalloc;
-#[cfg(not(target_env = "musl"))]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 fn init_logging() -> Result<()> {

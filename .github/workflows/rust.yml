@@ -9,7 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   BUILD_MODE: --release
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -22,23 +21,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - name: Install musl tools (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Add musl target (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: rustup target add x86_64-unknown-linux-musl
-
       - name: Cache Cargo dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -47,16 +38,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build Release
-        shell: bash
-        run: |
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            cargo build ${{ env.BUILD_MODE }} --target x86_64-unknown-linux-musl
-          else
-            cargo build ${{ env.BUILD_MODE }}
-          fi
+        run: cargo build ${{ env.BUILD_MODE }}
 
       - name: Test Compile
-        shell: bash
         run: cargo test ${{ env.BUILD_MODE }} --no-run
 
       - name: Prepare final binary
@@ -66,7 +50,7 @@ jobs:
           BIN_NAME="hifiserver-rust"
           case "${{ matrix.os }}" in
             ubuntu-latest)
-              cp "target/x86_64-unknown-linux-musl/release/$BIN_NAME" "artifacts/$BIN_NAME"
+              cp "target/release/$BIN_NAME" "artifacts/$BIN_NAME"
               ;;
             windows-latest)
               cp "target/release/$BIN_NAME.exe" "artifacts/$BIN_NAME.exe"
@@ -77,7 +61,7 @@ jobs:
           esac
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-${{ matrix.os }}
           path: artifacts/*
