@@ -7,21 +7,30 @@ The goal is to unofficially migrate hifisampler to Rust, just like its upstream 
 
 > [!CAUTION]
 > **Please note that this project is not yet completed. Its performance may be inferior to the original Python version.**  
-> **请注意，本项目没有开发完成。其性能可能不如原始的Python版本。**  
-> 
-> Due to certain reasons, I may not be able to allocate time to this project for a long period. Therefore, I have decided to publicly release the semi-finished code in advance, hoping to receive support from other developers.  
-> 由于一些原因，我可能很长一段时间无法分出精力在此项目上。因此我决定先行公开半成品的代码，以期待来自其他开发者的支持。  
+> **请注意，本项目没有开发完成。其性能可能不如原始的Python版本。**   
+>
+> This project aims to deliver performance comparable to GPU‑accelerated systems through the performance of Rust, even without a GPU. Consequently, there are currently no plans to support GPU acceleration.  
+> 本项目期望能够在无GPU的情况下，通过Rust的性能以实现与GPU加速相媲美的性能，因此暂时没有支持GPU加速的计划。  
 
 ## Difference 差异
-During the refactoring process, this project has also made several modifications to the original workflow of hifisampler, such as merging redundant STFT calculations, utilizing real‑valued FFT, and unifying tensor layouts, etc. Due to differences in programming languages, libraries, and potential errors introduced while optimizing the computational pipeline, this project may cause discrepancies against the processing results of the original Python implementation.  
-在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动，如合并重复的STFT计算、采用实数FFT与统一张量布局等。由于所采用的编程语言和库不同，以及在优化计算流程中可能引入的误差，本项目的处理结果可能与原来的Python实现有所不同。  
+> [!NOTE]
+> Please note: Future plans include introducing more differences, including but not limited to:
+> - Replacing the ONNX model inference with the pure Rust inference engine [lele](https://github.com/miuda-ai/lele/).
+> - Introducing additional flags, referencing the flags supported by Moresampler, and potentially aligning the behavior of some existing flags with that of Moresampler.
+>
+> 请注意：未来计划引入更多差异，包括但不限于：
+> - 将onnx模型改由纯Rust推理引擎[lele](https://github.com/miuda-ai/lele/)实现。
+> - 以Moresampler所支持的Flags为参考，计划引入更多的Flags，现有的一些Flags逻辑可能会考虑向Moresampler的行为对齐。
+
+During the refactoring process, this project has also made several modifications to the original workflow of hifisampler, such as **merging redundant STFT calculations, utilizing real‑valued FFT, and unifying tensor layouts**, etc. Due to differences in programming languages, libraries, and potential errors introduced while optimizing the computational pipeline, this project may cause discrepancies against the processing results of the original Python implementation.  
+在改写的过程中，本项目还对hifisampler原有的流程进行了一些改动，如**合并重复的STFT计算、采用实数FFT与统一张量布局**等。由于所采用的编程语言和库不同，以及在优化计算流程中可能引入的误差，本项目的处理结果可能与原来的Python实现有所不同。  
  
 Notable changes include:  
 主要改动包括：
 
 | Item | Python Version | Rust Version |
 |:---:|:---:|:---:|
-| Support model formats / 支持的模型格式| PyTorch and ONNX| Only ONNX |
+| Support model formats / 支持的模型格式| PyTorch and ONNX| Only ONNX `-> lele binary in future`|
 | Configuration file / 配置文件 | `config.py`, with vocoder‑hardcoded parameters / 含与声码器硬绑定的参数 | `hificonfig.ini`, without vocoder‑hardcoded parameters / 不含与声码器硬绑定的参数 |
 | Features cache / 特征缓存 | 32 bit float npz / 32位浮点NPZ | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
 | HNSEP cache / HNSEP缓存| 32 bit float PyTorch tensor / 32位浮点PyTorch张量 | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
