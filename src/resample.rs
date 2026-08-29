@@ -117,7 +117,7 @@ pub fn resample(args: Arguments) -> Result<()> {
     let pitch_render = akima(&pitch, &idx_pitch_clamped);
     let f0_render: Vec<f32> = pitch_render.iter().map(|&x| midi_to_hz(x)).collect();
     let mel_render = interp1d(&mel_origin, &idx_stretched);
-    let mut render = get_vocoder().lock().unwrap().run(mel_render, f0_render);
+    let mut render = get_vocoder().lock().unwrap().run(&mel_render, &f0_render);
     render.drain(((new_end * SR).min(render.len() as f32) as usize)..);
     render.drain(..((new_start * SR).max(0.0) as usize));
     if let Some(&a) = args.flags.get("A").and_then(|x| x.as_ref()) {

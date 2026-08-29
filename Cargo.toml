@@ -1,6 +1,6 @@
 [package]
 name = "hifiserver-rust"
-version = "1.1.0"
+version = "2.0.0"
 edition = "2024"
 
 [dependencies]
@@ -14,7 +14,7 @@ biquad = "0.6.0"
 ndarray ={version = "0.17.2" , features = ["rayon"]}
 regex = "1.13.1"
 
-ort = "=2.0.0-rc.13"
+lele = "0.1.13"
 
 axum = "0.8.9"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "fs", "macros"] }  
@@ -30,3 +30,9 @@ mimalloc = "0.1.52"
 
 [profile.release]
 debug = true
+lto = true          
+codegen-units = 1   
+panic = "abort"     
+
+[patch.crates-io]
+lele = { path = "E:/GitHub/lele-main" }  #Download lele from https://github.com/miuda-ai/lele since the crates has not update yet.
