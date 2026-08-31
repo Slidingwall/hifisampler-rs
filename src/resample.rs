@@ -119,7 +119,7 @@ pub fn resample(args: Arguments) -> Result<()> {
     let mel_render = interp1d(&mel_origin, &idx_stretched);
     let mut render = get_vocoder().lock().unwrap().run(mel_render, f0_render);
     render.drain(((new_end * SR).min(render.len() as f32) as usize)..);
-    render.drain(..((new_start * SR).max(0.0) as usize));
+    render.drain(..(new_start * SR) as usize);
     if let Some(&a) = args.flags.get("A").and_then(|x| x.as_ref()) {
         let a = a.clamp(-100.,100.)*1e-4;
         let n = pitch_render.len();

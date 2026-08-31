@@ -18,7 +18,6 @@ pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32) {
 }
 pub fn loudness_norm(wave: &mut Vec<f32>, target: f32, norm_strength: u8) {
     let orig_len = wave.len();
-    if orig_len == 0 { return; }
     let (mut val_start, mut val_end, mut need_restore) = (0, orig_len, false);
     if HIFI_CONFIG.trim_silence {
         if 882 <= orig_len {
@@ -51,7 +50,6 @@ pub fn loudness_norm(wave: &mut Vec<f32>, target: f32, norm_strength: u8) {
         }
     }
     let val_len = val_end - val_start;
-    if val_len == 0 { return; }
     if val_len < 17640 {
         reflect_pad_1d(wave, 0, 17640 - val_len);
     }
@@ -66,15 +64,24 @@ pub fn loudness_norm(wave: &mut Vec<f32>, target: f32, norm_strength: u8) {
         (target - loudness_lkfs) * norm_strength as f32 * 0.0005,
     );
     if need_restore {
-        let fade_len = 8820.min(val_len >> 2);
-        let fade_scale = 1.0 / (fade_len - 1) as f32;
-        let vf = val_len - fade_len;
-        for (i, x) in wave[val_start..val_end].iter_mut().enumerate() {
-            let mut g = gain;
-            if i >= vf {
-                g *= (i - vf) as f32 * fade_scale;
+        let mut fade_len = 8820.min(val_len >> 2);
+        if fade_len < 2 { fade_len = 0; }
+        if fade_len > 0 {
+            let fade_scale = 1.0 / (fade_len - 1) as f32;
+            let vf = val_len - fade_len;
+            for (i, x) in wave[val_start..val_end].iter_mut().enumerate() {
+                let mut g = gain;
+                if i >= vf {
+                    g *= (i - vf) as f32 * fade_scale;
+                } else if i < fade_len {
+                    g *= i as f32 * fade_scale;
+                }
+                *x *= g;
             }
-            *x *= g;
+        } else {
+            for x in &mut wave[val_start..val_end] {
+                *x *= gain;
+            }
         }
         wave[..val_start].fill(0.0);
         wave[val_end..].fill(0.0);
