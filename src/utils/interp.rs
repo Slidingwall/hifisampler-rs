@@ -1,5 +1,6 @@
 use ndarray::{Array2, Axis, azip};
 use std::f32::consts::PI;
+use crate::consts::EPSILON;
 pub fn akima(y: &[f32], xi: &[f32]) -> Vec<f32> {
     let n = y.len();
     let mut out = Vec::with_capacity(xi.len());
@@ -34,7 +35,7 @@ pub fn akima(y: &[f32], xi: &[f32]) -> Vec<f32> {
         let s3 = slope(i32 + 1);
         let w1 = (s3 - s2).abs();
         let w2 = (s1 - s0).abs();
-        m[i] = if w1 + w2 < 1e-12 {
+        m[i] = if w1 + w2 < EPSILON {
             0.5 * (s1 + s2)
         } else {
             (w1 * s1 + w2 * s2) / (w1 + w2)
@@ -111,7 +112,7 @@ pub fn spec_interp(
     let output_len = out.len_of(interp_axis) as isize;
     let iter_axis = Axis(1 - interp_axis.0);
     azip!((mut out_slice in out.axis_iter_mut(iter_axis), in_slice in input.axis_iter(iter_axis)) {
-        let ln_buf: Vec<f32> = in_slice.iter().map(|&v| (v + 1e-9).ln()).collect();
+        let ln_buf: Vec<f32> = in_slice.iter().map(|&v| (v + EPSILON).ln()).collect();
         for i in 0..output_len as usize {
             let (idx, frac) = get_pos(i);
             let mut sum = 0.0;
@@ -132,7 +133,7 @@ pub fn spec_interp(
                     weight_sum += weight;
                 }
             }
-            out_slice[i] = if weight_sum > 1e-9 { sum / weight_sum } else { 0.0 };
+            out_slice[i] = if weight_sum > EPSILON { sum / weight_sum } else { 0.0 };
         }
     });
     out

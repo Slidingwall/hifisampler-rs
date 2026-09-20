@@ -1,4 +1,4 @@
-use crate::{consts::FFT_SIZE, utils::{interp::spec_interp, mel_basis::MEL_BASIS_DATA}};
+use crate::{consts::{FFT_SIZE, EPSILON}, utils::{interp::spec_interp, mel_basis::MEL_BASIS_DATA}};
 use ndarray::{Array2, Axis, azip};
 pub fn mel(spec:&Array2<f32>,key_shift:f32)->Array2<f32>{
     let (inf, ot) = spec.dim();
@@ -13,7 +13,7 @@ pub fn mel(spec:&Array2<f32>,key_shift:f32)->Array2<f32>{
             }
         });
     };
-    if key_shift.abs() < 1e-6 {
+    if key_shift.abs() < EPSILON {
         process_mel(spec);
     } else {
         let fs = (-key_shift /12.).exp2();

@@ -76,6 +76,13 @@ Basically same as Python version.
 |**g**|Gender / formants<br/>性别 / 共振峰|-600~600|0|
 |**Hb**|Breath / noise<br/>气息 / 噪波|0~500|100|
 |**Hv**|Voice / harmonic<br/>发声 / 谐波|0~150|100|
+|**Ho**|Openness<br/>开口度|-100~100|0|
+|**Hr**|Resonance<br/>共振|-100~100|0|
+|**HE**|Formant emphasis<br/>共振峰加强|-100~100|0|
+|**Hd**|Dryness<br/>干涩|-100~100|0|
+|**HC**|Coarseness<br/>粗糙|0~100|0|
+|**HD**|Distortion<br/>失真|0~100|0|
+|**Hp**|Unease<br/>不安感|0~100|0|
 |**HG**|Vocal fry / growl<br/>怒音 / 嘶吼|0~100|0|
 |**P**[^1]|Note level loudness normalize<br/>音符级响度标准化|0~100|100|
 |**t**|Pitch shift<br/>音高偏移|-1200~1200|0|

@@ -4,7 +4,8 @@ use regex::Regex;
 use std::collections::HashMap;
 static FLAG_REGEX: Lazy<Regex> = Lazy::new(|| {
     let supported_flags = ["fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
-        "A", "B", "G", "P", "S", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG"];
+        "A", "G", "P", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG",
+        "Ho", "Hr", "HE", "Hd", "HC", "HD", "Hp"];
     Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", supported_flags.join("|")))
         .expect("Failed to compile flag regex (static)")
 });
@@ -106,8 +107,7 @@ mod tests {
     }
     #[test]
     fn test_parse_with_values() -> Result<()> {
-        let flags = flag_parser("B50Hv70fl0.5G")?;
-        assert_eq!(flags.get("B"), Some(&Some(50.0)));
+        let flags = flag_parser("Hv70fl0.5G")?;
         assert_eq!(flags.get("Hv"), Some(&Some(70.0)));
         assert_eq!(flags.get("fl"), Some(&Some(0.5)));
         assert_eq!(flags.get("G"), Some(&None)); 
@@ -115,10 +115,26 @@ mod tests {
     }
     #[test]
     fn test_parse_flag_without_value() -> Result<()> {
-        let flags = flag_parser("GHeMe")?;
+        let flags = flag_parser("GHe")?;
         assert_eq!(flags.get("G"), Some(&None));
         assert_eq!(flags.get("He"), Some(&None));
-        assert_eq!(flags.get("Me"), Some(&None));
+        Ok(())
+    }
+    #[test]
+    fn test_parse_hstar_flags() -> Result<()> {
+        let flags = flag_parser("Ho50Hr-30HE10Hd20HC40")?;
+        assert_eq!(flags.get("Ho"), Some(&Some(50.0)));
+        assert_eq!(flags.get("Hr"), Some(&Some(-30.0)));
+        assert_eq!(flags.get("HE"), Some(&Some(10.0)));
+        assert_eq!(flags.get("Hd"), Some(&Some(20.0)));
+        assert_eq!(flags.get("HC"), Some(&Some(40.0)));
+        Ok(())
+    }
+    #[test]
+    fn test_parse_hstar_extra() -> Result<()> {
+        let flags = flag_parser("HD60Hp40")?;
+        assert_eq!(flags.get("HD"), Some(&Some(60.0)));
+        assert_eq!(flags.get("Hp"), Some(&Some(40.0)));
         Ok(())
     }
 }

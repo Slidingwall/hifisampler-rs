@@ -1,6 +1,36 @@
 use ebur128::{EbuR128, Mode};
 use ndarray::{Array2, Axis};
 use crate::{audio::base_coeff::BASE_COEFF, consts::{HIFI_CONFIG, SAMPLE_RATE}, utils::reflect_pad_1d};
+pub fn formant_openness(wave: &mut [f32], f0_per_frame: &[f32], hop: usize, sr: f32, openness: f32) {
+    if openness == 0.0 || f0_per_frame.is_empty() { return; }
+    let db = openness.clamp(-100.0, 100.0) / 100.0 * 6.0;
+    let a = 10.0f32.powf(db / 40.0);
+    let two_pi_over_sr = 2.0 * std::f32::consts::PI / sr;
+    let nf = f0_per_frame.len();
+    let mut x1 = 0.0f32; let mut x2 = 0.0f32;
+    let mut y1 = 0.0f32; let mut y2 = 0.0f32;
+    let mut cur_fc = -1.0f32;
+    let mut b0 = 1.0f32; let mut b1 = 0.0f32; let mut b2 = 0.0f32; let mut a1 = 0.0f32; let mut a2 = 0.0f32;
+    for (i, s) in wave.iter_mut().enumerate() {
+        let fc = f0_per_frame[(i / hop).min(nf - 1)];
+        if (fc - cur_fc).abs() > 0.5 {
+            cur_fc = fc;
+            let w0 = two_pi_over_sr * fc;
+            let (sinw, cosw) = w0.sin_cos();
+            let q = (fc / 300.0).max(0.2);
+            let alpha = sinw / (2.0 * q);
+            let a0 = 1.0 + alpha / a;
+            b0 = (1.0 + alpha * a) / a0;
+            b1 = (-2.0 * cosw) / a0;
+            b2 = (1.0 - alpha * a) / a0;
+            a1 = (-2.0 * cosw) / a0;
+            a2 = (1.0 - alpha / a) / a0;
+        }
+        let y = b0 * (*s) + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1; x1 = *s; y2 = y1; y1 = y;
+        *s = y;
+    }
+}
 pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32) {
     let mut orig_max = 0.0f32;
     let mut f_max = 0.0f32;
