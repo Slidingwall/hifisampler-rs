@@ -8,17 +8,22 @@ pub struct HNSEPLoader {
     session: Session,
 }
 impl HNSEPLoader {
-    pub fn new(model_path: &PathBuf) -> Self {
+    pub fn new(model_path: &PathBuf, intra_threads: usize) -> Self {
+        let mut builder = Session::builder().unwrap();
+        let eps = crate::model::select_execution_providers();
+        if !eps.is_empty() {
+            builder = builder.with_execution_providers(eps).unwrap();
+        }
         Self {
-            session: Session::builder().unwrap()
+            session: builder
+                .with_intra_threads(intra_threads).unwrap()
                 .with_optimization_level(GraphOptimizationLevel::Level3).unwrap()
                 .commit_from_file(model_path).unwrap()
         }
     }
     pub fn run(&mut self, spec: &Array3<f32>) -> Array2<f32> {
-        let (ch, bins, frames) = spec.dim();
-        assert_eq!(ch, 2);
-        let padded_frames = (frames + 16 - 1) / 16 * 16;
+    let (_, bins, frames) = spec.dim();
+    let padded_frames = (frames + 16 - 1) / 16 * 16;
         let outputs = if padded_frames != frames {
             let mut padded = Array3::zeros((2, bins, padded_frames));
             padded.slice_mut(ndarray::s![.., .., 0..frames]).assign(&spec);

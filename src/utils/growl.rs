@@ -1,6 +1,6 @@
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz};
 use once_cell::sync::Lazy;
-use crate::{consts::SAMPLE_RATE, utils::lerp};
+use crate::{consts::{SAMPLE_RATE, EPSILON}, utils::lerp};
 fn forward_backward_filter<F: Biquad<f32>>(signal: &mut [f32], filter: &mut F, repeats: usize) {
     for _ in 0..repeats {
         signal.iter_mut().for_each(|s| *s = filter.run(*s));
@@ -24,7 +24,7 @@ static HIGH_400_COEFF: Lazy<Coefficients<f32>> = Lazy::new(|| highpass_coeffs(40
 static HIGH_20_COEFF: Lazy<Coefficients<f32>> = Lazy::new(|| highpass_coeffs(20.0));
 pub fn growl(audio: &mut Vec<f32>, freq: f32, strength: f32) {
     let len = audio.len();
-    if len == 0 || strength <= 0.0 || freq <= 0.0 {
+    if len == 0 || strength <= 0.0 {
         return;
     }
     let mut high = audio.clone();
@@ -71,7 +71,7 @@ pub fn growl(audio: &mut Vec<f32>, freq: f32, strength: f32) {
     }
     let rms_h = (sum_h_sq / len as f32).sqrt();
     let rms_m = (sum_m_sq / len as f32).sqrt();
-    let scale = if rms_m > 1e-10 { rms_h / rms_m } else { 0.0 };
+    let scale = if rms_m > EPSILON { rms_h / rms_m } else { 0.0 };
     for (a, m) in audio.iter_mut().zip(buf.iter()) {
         *a += m * scale;
     }
