@@ -24,7 +24,7 @@ static HIGH_400_COEFF: Lazy<Coefficients<f32>> = Lazy::new(|| highpass_coeffs(40
 static HIGH_20_COEFF: Lazy<Coefficients<f32>> = Lazy::new(|| highpass_coeffs(20.0));
 pub fn growl(audio: &mut Vec<f32>, freq: f32, strength: f32) {
     let len = audio.len();
-    if len == 0 || strength <= 0.0 || freq <= 0.0 {
+    if len == 0 || strength <= 0.0 {
         return;
     }
     let mut high = audio.clone();

@@ -3,10 +3,6 @@ use std::f32::consts::PI;
 pub fn akima(y: &[f32], xi: &[f32]) -> Vec<f32> {
     let n = y.len();
     let mut out = Vec::with_capacity(xi.len());
-    if n == 0 {
-        out.resize(xi.len(), 0.0);
-        return out;
-    }
     if n == 1 {
         out.resize(xi.len(), y[0]);
         return out;

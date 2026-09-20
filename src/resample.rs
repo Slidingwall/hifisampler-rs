@@ -48,7 +48,7 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
             *o = r.hypot(i) * factor;
         });
     }
-    let scale = 256f32.max(spec_amp.iter().fold(0.0, |m, &x| m.max(x))).recip() * 256.0;
+    let scale = 256.0 / spec_amp.iter().fold(0.0_f32, |m, &x| m.max(x)).max(256.0);
     spec_amp.mapv_inplace(|x| x * scale);
     let features = (mel(&spec_amp, gender.clamp(-600.0,600.0)*0.01), scale);
     CACHE_MANAGER.save_features_cache(&features_path, &features);
@@ -125,7 +125,7 @@ pub fn resample(args: Arguments) -> Result<()> {
             for i in 1..n-1{g[i]=(pitch_render[i+1]-pitch_render[i-1])*0.5;}
             g[n-1]=pitch_render[n-1]-pitch_render[n-2];
         }
-        for d in &mut g{*d=5f32.powf(a**d);}
+        for d in &mut g{*d=5f32.powf(a * *d);}
         let last=(g.len()-1)as f32;
         let step=(new_end-new_start)/(render.len()as f32*THOP);
         let start=new_start/THOP;
