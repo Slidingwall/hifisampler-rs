@@ -1,15 +1,12 @@
 name: Rust Release Build
-
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
 env:
   CARGO_TERM_COLOR: always
   BUILD_MODE: --release
-
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -18,7 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -27,7 +23,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-
+          targets: x86_64-pc-windows-msvc
       - name: Cache Cargo dependencies
         uses: actions/cache@v5
         with:
@@ -35,14 +31,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            ${{ matrix.os == 'ubuntu-latest' && '~/.cache/ort.pyke.io' || '' }}
+            ${{ matrix.os == 'windows-latest' && '~/AppData/Local/ort.pyke.io' || '' }}
+            ${{ matrix.os == 'macos-latest' && '~/Library/Caches/ort.pyke.io' || '' }}
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Build Release
         run: cargo build ${{ env.BUILD_MODE }}
-
       - name: Test Compile
         run: cargo test ${{ env.BUILD_MODE }} --no-run
-
       - name: Prepare final binary
         shell: bash
         run: |
@@ -59,7 +55,6 @@ jobs:
               cp "target/release/$BIN_NAME" "artifacts/$BIN_NAME"
               ;;
           esac
-
       - name: Upload Artifact
         uses: actions/upload-artifact@v5
         with:

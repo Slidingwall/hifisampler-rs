@@ -87,15 +87,11 @@ pub fn resample(args: Arguments) -> Result<()> {
     let vel_con = vel * con;
     let stretch = |t: f32| if t < vel_con { t / vel } else { con + (t - vel_con) / scal_ratio };
     let stretched_frames = ((vel_con + (mel_origin.ncols() as f32 * THOP_ORIGIN - con) * scal_ratio) / THOP).floor() as usize + 1;
-    let mut stretched_t_mel: Vec<f32> = (0..stretched_frames)
-        .map(|i| (i as f32 + 0.5) * THOP)   
-        .collect();
     let cut_left = (((args.offset * vel) / THOP + 0.5).floor() as usize).saturating_sub(HIFI_CONFIG.fill);
     let cut_right = (stretched_frames - (((length_req + vel_con) / THOP + 0.5).floor() as usize)).saturating_sub(HIFI_CONFIG.fill);
-    stretched_t_mel.truncate(stretched_t_mel.len() - cut_right);
-    stretched_t_mel.drain(..cut_left);
-    let idx_stretched: Vec<f32> = stretched_t_mel.iter()
-        .map(|&t| (stretch(t) / THOP_ORIGIN - 0.5).clamp(0.0, (mel_origin.ncols() - 1) as f32))
+    let idx_stretched: Vec<f32> = (cut_left..stretched_frames - cut_right)
+        .map(|i| (i as f32 + 0.5) * THOP)
+        .map(|t| (stretch(t) / THOP_ORIGIN - 0.5).clamp(0.0, (mel_origin.ncols() - 1) as f32))
         .collect();
     let n_frames = idx_stretched.len();
     info!("Stretched time axis length: {}", n_frames);
@@ -153,7 +149,7 @@ pub fn resample(args: Arguments) -> Result<()> {
     }
     let mult = (if new_max > HIFI_CONFIG.peak_limit { HIFI_CONFIG.peak_limit / new_max } else { 1.0 }) * args.volume;
     render.iter_mut().for_each(|x| *x *= mult);
-    write_audio(&args.out_file, &render)?;
+    write_audio(&args.out_file, render)?;
     info!("Successfully processed: {} -> {}", args.in_file.display(), args.out_file.display());
     Ok(())
 }

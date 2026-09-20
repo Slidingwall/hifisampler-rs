@@ -8,7 +8,7 @@ use crate::{
     utils::parser::{flag_parser, pitch_parser, pitch_string_to_cents, tempo_parser}
 };
 #[derive(Clone)]
-pub struct AppState {
+struct AppState {
     server_ready: Arc<AtomicBool>,
     concurrency_semaphore: Arc<Semaphore>,
 }
@@ -28,7 +28,7 @@ pub struct Arguments {
     pub tempo: f32,
     pub pitchbend: Vec<f32>,
 }
-pub fn split_arguments(input: &str) -> Result<Arguments> {
+fn split_arguments(input: &str) -> Result<Arguments> {
     let tokens: Vec<&str> = input.split(' ').collect();
     let prefix = tokens[..tokens.len() - 11].join(" ");
     let split_idx = prefix.find(".wav ").ok_or_else(|| anyhow::anyhow!("Missing .wav in input"))?;

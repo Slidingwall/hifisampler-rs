@@ -8,18 +8,14 @@ The goal is to unofficially migrate hifisampler to Rust, just like its upstream 
 > [!CAUTION]
 > **Please note that this project is not yet completed. Its performance may be inferior to the original Python version.**  
 > **请注意，本项目没有开发完成。其性能可能不如原始的Python版本。**   
->
-> This project aims to deliver performance comparable to GPU‑accelerated systems through the performance of Rust, even without a GPU. Consequently, there are currently no plans to support GPU acceleration.  
-> 本项目期望能够在无GPU的情况下，通过Rust的性能以实现与GPU加速相媲美的性能，因此暂时没有支持GPU加速的计划。  
+  
 
 ## Difference 差异
 > [!NOTE]
 > Please note: Future plans include introducing more differences, including but not limited to:
-> - Replacing the ONNX model inference with the pure Rust inference engine [lele](https://github.com/miuda-ai/lele/).
 > - Introducing additional flags, referencing the flags supported by Moresampler, and potentially aligning the behavior of some existing flags with that of Moresampler.
 >
 > 请注意：未来计划引入更多差异，包括但不限于：
-> - 将onnx模型改由纯Rust推理引擎[lele](https://github.com/miuda-ai/lele/)实现。
 > - 以Moresampler所支持的Flags为参考，计划引入更多的Flags，现有的一些Flags逻辑可能会考虑向Moresampler的行为对齐。
 
 During the refactoring process, this project has also made several modifications to the original workflow of hifisampler, such as **merging redundant STFT calculations, utilizing real‑valued FFT, and unifying tensor layouts**, etc. Due to differences in programming languages, libraries, and potential errors introduced while optimizing the computational pipeline, this project may cause discrepancies against the processing results of the original Python implementation.  
@@ -30,7 +26,7 @@ Notable changes include:
 
 | Item | Python Version | Rust Version |
 |:---:|:---:|:---:|
-| Support model formats / 支持的模型格式| PyTorch and ONNX| Only ONNX `-> lele binary in future`|
+| Support model formats / 支持的模型格式| PyTorch and ONNX| Only ONNX |
 | Configuration file / 配置文件 | `config.py`, with vocoder‑hardcoded parameters / 含与声码器硬绑定的参数 | `hificonfig.ini`, without vocoder‑hardcoded parameters / 不含与声码器硬绑定的参数 |
 | Features cache / 特征缓存 | 32 bit float npz / 32位浮点NPZ | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |
 | HNSEP cache / HNSEP缓存| 32 bit float PyTorch tensor / 32位浮点PyTorch张量 | Quantized 16 bit unsigned integer binary / 量化的16位无符号整数二进制 |

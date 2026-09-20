@@ -8,9 +8,15 @@ pub struct HNSEPLoader {
     session: Session,
 }
 impl HNSEPLoader {
-    pub fn new(model_path: &PathBuf) -> Self {
+    pub fn new(model_path: &PathBuf, intra_threads: usize) -> Self {
+        let mut builder = Session::builder().unwrap();
+        let eps = crate::model::select_execution_providers();
+        if !eps.is_empty() {
+            builder = builder.with_execution_providers(eps).unwrap();
+        }
         Self {
-            session: Session::builder().unwrap()
+            session: builder
+                .with_intra_threads(intra_threads).unwrap()
                 .with_optimization_level(GraphOptimizationLevel::Level3).unwrap()
                 .commit_from_file(model_path).unwrap()
         }

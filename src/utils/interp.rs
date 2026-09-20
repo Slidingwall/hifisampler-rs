@@ -78,6 +78,9 @@ pub fn interp1d(y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
         return res;
     }
     let last_idx = (n_cols - 1) as f32;
+    let mut cur_idx: isize = -1;
+    let mut y0 = y.column(0);
+    let mut y1 = y.column(0);
     for (i, &xv) in xi.iter().enumerate() {
         let mut out_row = res.row_mut(i);
         if xv <= 0.0 {
@@ -89,9 +92,12 @@ pub fn interp1d(y: &Array2<f32>, xi: &[f32]) -> Array2<f32> {
             continue;
         }
         let col_idx = xv.floor() as usize;
+        if col_idx as isize != cur_idx {
+            y0 = y.column(col_idx);
+            y1 = y.column(col_idx + 1);
+            cur_idx = col_idx as isize;
+        }
         let frac = xv - col_idx as f32;
-        let y0 = y.column(col_idx);
-        let y1 = y.column(col_idx + 1);
         for r in 0..n_rows {
             out_row[r] = y0[r] + (y1[r] - y0[r]) * frac;
         }
@@ -109,6 +115,7 @@ pub fn spec_interp(
     let output_len = out.len_of(interp_axis) as isize;
     let iter_axis = Axis(1 - interp_axis.0);
     azip!((mut out_slice in out.axis_iter_mut(iter_axis), in_slice in input.axis_iter(iter_axis)) {
+        let ln_buf: Vec<f32> = in_slice.iter().map(|&v| (v + 1e-9).ln()).collect();
         for i in 0..output_len as usize {
             let (idx, frac) = get_pos(i);
             let mut sum = 0.0;
@@ -125,8 +132,7 @@ pub fn spec_interp(
                     } else {
                         0.0
                     };
-                    let val = (in_slice[pos as usize] + 1e-9).ln();
-                    sum += val * weight;
+                    sum += ln_buf[pos as usize] * weight;
                     weight_sum += weight;
                 }
             }
