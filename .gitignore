@@ -9,3 +9,6 @@
 *.res
 *.exe
 flamegraph.svg
+# Legacy onnxruntime artifacts (pre-ort-sys era; unused since onnxruntime is now statically linked)
+onnxruntime.dll
+onnxruntime.lib
