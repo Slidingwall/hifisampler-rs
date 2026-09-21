@@ -90,6 +90,7 @@ Basically same as Python version.
 |**HC**|Coarseness<br/>粗糙|0~100|0|
 |**HD**|Distortion<br/>失真|0~100|0|
 |**Hp**|Unease<br/>不安感|0~100|0|
+|**e**|Force Stretch<br/>强制拉伸|bool|false|
 
 [^1]: Only effective when `wave_norm` is set to `true` in `hificonfig.ini`, targeting -16 LUFS.  
       仅当`hificonfig.ini`中，`wave_norm`为`true`时有效，以 -16 LUFS 为基准。  
