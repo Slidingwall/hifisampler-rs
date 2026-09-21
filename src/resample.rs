@@ -83,7 +83,13 @@ pub fn resample(args: Arguments) -> Result<()> {
         stretch_len = pad_size as f32 * THOP_ORIGIN;
         info!("new_total_time: {}", mel_origin.ncols() as f32 * THOP_ORIGIN);
     }
-    let scal_ratio = if stretch_len < length_req { length_req / stretch_len } else { 1.0 };
+    let force_stretch = args.flags.contains_key("e");
+    let scal_ratio = if stretch_len < length_req || force_stretch {
+        length_req / stretch_len
+    } else { 1.0 };
+    if force_stretch {
+        info!("Force Stretch (e) enabled: scal_ratio={:.4}", scal_ratio);
+    }
     let vel_con = vel * con;
     let stretch = |t: f32| if t < vel_con { t / vel } else { con + (t - vel_con) / scal_ratio };
     let stretched_frames = ((vel_con + (mel_origin.ncols() as f32 * THOP_ORIGIN - con) * scal_ratio) / THOP).floor() as usize + 1;

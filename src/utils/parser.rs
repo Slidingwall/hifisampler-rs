@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::borrow::Cow;
 use std::collections::HashMap;
-const SUPPORTED_FLAGS: &[&str] = &["fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
+const SUPPORTED_FLAGS: &[&str] = &["fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl", "e",
     "A", "G", "P", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG",
     "Ho", "Hr", "HE", "Hd", "HC", "HD", "Hp"];
 static FLAG_REGEX: Lazy<Regex> = Lazy::new(|| {
@@ -141,6 +141,18 @@ mod tests {
         let flags = flag_parser("HD60Hp40")?;
         assert_eq!(flags.get("HD"), Some(&Some(60.0)));
         assert_eq!(flags.get("Hp"), Some(&Some(40.0)));
+        Ok(())
+    }
+    #[test]
+    fn test_parse_e_flag() -> Result<()> {
+        let flags = flag_parser("e")?;
+        assert_eq!(flags.get("e"), Some(&None));
+        let flags = flag_parser("eG")?;
+        assert_eq!(flags.get("e"), Some(&None));
+        assert_eq!(flags.get("G"), Some(&None));
+        let flags = flag_parser("He")?;
+        assert_eq!(flags.get("He"), Some(&None));
+        assert!(!flags.contains_key("e"), "He must not be cannibalized by standalone e");
         Ok(())
     }
 }
