@@ -1,12 +1,13 @@
 use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::HashMap;
+const SUPPORTED_FLAGS: &[&str] = &["fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
+    "A", "G", "P", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG",
+    "Ho", "Hr", "HE", "Hd", "HC", "HD", "Hp"];
 static FLAG_REGEX: Lazy<Regex> = Lazy::new(|| {
-    let supported_flags = ["fe", "fl", "fo", "fv", "fp", "ve", "vo", "g", "t", "vl",
-        "A", "G", "P", "p", "R", "D", "C", "Z", "Hv", "Hb", "Ht", "He", "HG",
-        "Ho", "Hr", "HE", "Hd", "HC", "HD", "Hp"];
-    Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", supported_flags.join("|")))
+    Regex::new(&format!(r"({})([+-]?\d+(\.\d+)?)?", SUPPORTED_FLAGS.join("|")))
         .expect("Failed to compile flag regex (static)")
 });
 #[inline(always)]
@@ -66,11 +67,16 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
     let octave = octave_part.parse::<i32>()? + 1;
     Ok(octave * 12 + note_val)
 }
-pub fn flag_parser(s: &str) -> Result<HashMap<String, Option<f32>>> {
+pub fn flag_parser(s: &str) -> Result<HashMap<Cow<'static, str>, Option<f32>>> {
     let input = s.replace('/', "");
     let mut flags = HashMap::new();
     FLAG_REGEX.captures_iter(&input).for_each(|cap| {
-        let flag = cap.get(1).unwrap().as_str().to_string();
+        let name = cap.get(1).unwrap().as_str();
+        let flag = SUPPORTED_FLAGS
+            .iter()
+            .find(|&&f| f == name)
+            .map(|&f| Cow::Borrowed(f))
+            .unwrap_or_else(|| Cow::Owned(name.to_string()));
         let value = cap.get(2).map(|m| m.as_str().parse::<f32>().ok()).flatten();
         flags.insert(flag, value);
     });

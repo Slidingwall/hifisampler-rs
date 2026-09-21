@@ -43,16 +43,52 @@ pub fn get_remover() -> &'static Mutex<HNSEPLoader> {
     &pool[idx]
 }
 static EXECUTION_PROVIDERS: Lazy<Vec<ExecutionProviderDispatch>> = Lazy::new(|| {
-    #[cfg(target_os = "linux")]
-    let eps = vec![ort::ep::CUDA::default().build(), ort::ep::WebGPU::default().build()];
-    #[cfg(target_os = "windows")]
-    let eps = vec![ort::ep::CUDA::default().build(), ort::ep::DirectML::default().build()];
-    #[cfg(target_os = "macos")]
-    let eps = vec![ort::ep::CoreML::default().build()];
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-    let eps: Vec<ExecutionProviderDispatch> = Vec::new();
+    let mut eps: Vec<ExecutionProviderDispatch> = Vec::new();
+    #[cfg(feature = "ep-directml")]
+    {
+        let ep = ort::ep::DirectML::default();
+        log_ep_availability(&ep);
+        eps.push(ep.build());
+    }
+    #[cfg(feature = "ep-coreml")]
+    {
+        let ep = ort::ep::CoreML::default();
+        log_ep_availability(&ep);
+        eps.push(ep.build());
+    }
+    #[cfg(feature = "ep-webgpu")]
+    {
+        let ep = ort::ep::WebGPU::default();
+        log_ep_availability(&ep);
+        eps.push(ep.build());
+    }
+    #[cfg(feature = "ep-cuda")]
+    {
+        let trt = ort::ep::TensorRT::default();
+        log_ep_availability(&trt);
+        eps.push(trt.build());
+        let cuda = ort::ep::CUDA::default();
+        log_ep_availability(&cuda);
+        eps.push(cuda.build());
+    }
+    eps.push(ort::ep::CPU::default().build());
+    tracing::info!(
+        "Execution provider chain (priority order): [{}]",
+        eps.iter()
+            .map(|e| format!("{:?}", e))
+            .collect::<Vec<_>>()
+            .join(" -> ")
+    );
     eps
 });
+fn log_ep_availability<E: ort::ep::ExecutionProvider>(ep: &E) {
+    let name = ep.name();
+    match ep.is_available() {
+        Ok(true) => tracing::info!("Execution provider '{name}' is compiled-in and AVAILABLE — GPU acceleration will be used."),
+        Ok(false) => tracing::warn!("Execution provider '{name}' is compiled-in but NOT available on this host — falling back to CPU."),
+        Err(e) => tracing::warn!("Could not query availability of EP '{name}' ({e}) — will fall back to CPU if registration fails."),
+    }
+}
 fn select_execution_providers() -> Vec<ExecutionProviderDispatch> {
     EXECUTION_PROVIDERS.clone()
 }

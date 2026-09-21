@@ -26,17 +26,11 @@ once_cell = "1.21.4"
 fs4 = "1.1.0"
 mimalloc = "0.1.52"
 
-[target.'cfg(target_os = "linux")'.dependencies.ort]
-version = "=2.0.0-rc.13"
-features = ["cuda", "webgpu"]
-
-[target.'cfg(target_os = "windows")'.dependencies.ort]
-version = "=2.0.0-rc.13"
-features = ["cuda", "directml"]
-
-[target.'cfg(target_os = "macos")'.dependencies.ort]
-version = "=2.0.0-rc.13"
-features = ["coreml"]
-
+[features]
+default = ["ep-webgpu"]                                  
+ep-webgpu   = ["ort/webgpu", "ort/lax-feature-matching"]  
+ep-directml = ["ort/directml", "ort/lax-feature-matching"]                      
+ep-coreml   = ["ort/coreml", "ort/lax-feature-matching"]  
+ep-cuda     = ["ort/cuda", "ort/tensorrt", "ort/nvrtx", "ort/lax-feature-matching"]  
 [profile.release]
 debug = true

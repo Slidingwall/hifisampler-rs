@@ -119,18 +119,19 @@ pub fn resample(args: Arguments) -> Result<()> {
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
         let fb = &MEL_CENTER_HZ;
-        let n = mel_render.ncols();
-        let formant_k = if formant != 0.0 {
-            if formant > 0.0 { (1.0 + 0.005 * formant).ln() } else { (1.0 + 0.0025 * formant).ln() }.exp()
-        } else { 1.0 };
         let bell = |fc: f32, center: f32, width: f32, gain: f32| (-0.5 * ((fc - center) / width).powi(2) * gain).exp();
-        let (gr, gd, gc) = (resonance / 100.0, dryness / 100.0, roughness / 100.0);
+        let (gr, gd, gc) = (resonance * 0.01, dryness * 0.01, roughness * 0.01);
+        let formant_k = if formant > 0.0 { 1.0 + 0.005 * formant } else { 1.0 + 0.0025 * formant };
+        let mut gains = [0.0f32; 128];
         for b in 0..128 {
-            let k = formant_k
+            gains[b] = formant_k
                 * bell(fb[b], 3200.0, 1000.0, gr)
                 * bell(fb[b], 6000.0, 2000.0, gd)
                 * bell(fb[b], 4500.0, 1500.0, gc);
-            for t in 0..n { mel_render[[b, t]] *= k; }
+        }
+        for t in 0..mel_render.nrows() {
+            let mut row = mel_render.row_mut(t);
+            for b in 0..128 { row[b] *= gains[b]; }
         }
     }
     let mut render = get_vocoder().lock().unwrap().run(mel_render, f0_render.clone());
