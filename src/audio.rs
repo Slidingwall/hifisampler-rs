@@ -28,20 +28,13 @@ pub fn read_audio<P: AsRef<Path>>(path: P) -> Result<Vec<f32>> {
     Ok(downmix_to_mono(&buf).samples)
 }
 pub fn write_audio<P: AsRef<Path>>(path: P, audio: Vec<f32>) -> Result<()> {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| anyhow!("failed to create output dir {:?}: {e}", parent))?;
-        }
-    }
     let buf = AudioBuffer::<f32> {
         samples: audio,
         sample_rate: SAMPLE_RATE,
         channels: ChannelLayout::Mono,
         format: SampleFormat::F32,
     };
-    encode_wav_with_config(&buf, path, WavBitDepth::I16)
+    encode_wav_with_config(&buf, path.as_ref(), WavBitDepth::I16)
         .map_err(|e| anyhow!("WAV encode failed: {e}"))?;
     Ok(())
 }
