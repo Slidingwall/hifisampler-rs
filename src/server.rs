@@ -1,6 +1,6 @@
 use anyhow::Result;
 use axum::{ extract::State, http::StatusCode, response::IntoResponse, routing::get, Router };
-use std::{ collections::HashMap, net::SocketAddr, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}} };
+use std::{ borrow::Cow, collections::HashMap, net::SocketAddr, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}} };
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
 use crate::{
@@ -18,7 +18,7 @@ pub struct Arguments {
     pub out_file: PathBuf,
     pub pitch: f32,
     pub velocity: f32,
-    pub flags: HashMap<String, Option<f32>>,
+    pub flags: HashMap<Cow<'static, str>, Option<f32>>,
     pub offset: f32,
     pub length: f32,
     pub consonant: f32,
@@ -30,10 +30,9 @@ pub struct Arguments {
 }
 fn split_arguments(input: &str) -> Result<Arguments> {
     let tokens: Vec<&str> = input.split(' ').collect();
-    let prefix = tokens[..tokens.len() - 11].join(" ");
-    let split_idx = prefix.find(".wav ").ok_or_else(|| anyhow::anyhow!("Missing .wav in input"))?;
-    let (in_file, out_file) = prefix.split_at(split_idx + 4);
     let len = tokens.len();
+    let split_idx = input.find(".wav ").ok_or_else(|| anyhow::anyhow!("Missing .wav in input"))?;
+    let (in_file, out_file) = input.split_at(split_idx + 4);
     Ok(Arguments {
         in_file: PathBuf::from(in_file),
         out_file: PathBuf::from(out_file.trim_start_matches(' ')),
@@ -86,16 +85,26 @@ async fn handle_post(State(state): State<AppState>, body: String) -> (StatusCode
     let task_result = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         resample(args)
-    }).await.unwrap();
-    if let Ok(()) = task_result {
-        info!("Processing {} successful.", note_info);
-        (StatusCode::OK, format!("Success: {}", note_info))
-    } else {
-        error!("Processing {} failed: {}", note_info, task_result.unwrap_err());
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error processing: Internal error.".to_string()
-        )
+    }).await;
+    match task_result {
+        Ok(Ok(())) => {
+            info!("Processing {} successful.", note_info);
+            (StatusCode::OK, format!("Success: {}", note_info))
+        }
+        Ok(Err(e)) => {
+            error!("Processing {} failed: {}", note_info, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Error processing: {}", e),
+            )
+        }
+        Err(e) => {
+            error!("Processing {} panicked: {}", note_info, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Error processing: rendering task panicked.".to_string(),
+            )
+        }
     }
 }
 pub async fn run(port: u16, max_workers: usize) {

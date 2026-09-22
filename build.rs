@@ -10,6 +10,28 @@ fn main() {
         return;
     }
 
+    if let Ok(out_dir) = env::var("OUT_DIR") {
+        if let Some(target) = PathBuf::from(&out_dir).ancestors().find(|p| {
+            matches!(p.file_name().and_then(|s| s.to_str()), Some("debug") | Some("release"))
+        }) {
+            let target = target.to_path_buf();
+            for sub in [target.clone(), target.join("deps"), target.join("examples")] {
+                if let Ok(entries) = std::fs::read_dir(&sub) {
+                    for e in entries.flatten() {
+                        let p = e.path();
+                        if p.extension().and_then(|s| s.to_str()) == Some("dll") {
+                            if let Ok(meta) = std::fs::metadata(&p) {
+                                if meta.len() == 0 && !meta.file_type().is_symlink() {
+                                    let _ = std::fs::remove_file(&p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     // Search a few common Windows SDK locations; skip if none exist.
