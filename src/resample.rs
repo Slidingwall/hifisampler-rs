@@ -124,20 +124,34 @@ pub fn resample(args: Arguments) -> Result<()> {
     let dryness = args.flags.get("Hd").copied().flatten().unwrap_or(0.0);
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
-        let fb = &MEL_CENTER_HZ;
-        let (ar, ad, ac) = (resonance * 0.01, dryness * 0.01, roughness * 0.01);
-        let formant_k = if formant > 0.0 { 1.0 + 0.005 * formant } else { 1.0 + 0.0025 * formant };
-        let shape = |fc: f32, center: f32, width: f32| (-0.5 * ((fc - center) / width).powi(2)).exp();
-        let mut gains = [0.0f32; 128];
+        let ar = resonance * 0.0069;   
+        let ad = dryness * 0.0069;      
+        let ac = roughness * 0.0069;    
+        let me = formant * 0.0069;      
+        let bell = |fc: f32, c: f32, w: f32| (-0.5 * ((fc - c) / w).powi(2)).exp();
+        let hshelf = |fc: f32, c: f32, w: f32| 1.0 / (1.0 + (-(fc - c) / w).exp()); 
+        let mut off = [0.0f32; 128];
         for b in 0..128 {
-            let s = ar * shape(fb[b], 3200.0, 1000.0)
-                  + ad * shape(fb[b], 6000.0, 2000.0)
-                  + ac * shape(fb[b], 4500.0, 1500.0);
-            gains[b] = (formant_k * (1.0 + s)).max(0.0);
+            off[b] += ar * bell(&MEL_CENTER_HZ[b], 3000.0, 900.0);
+            off[b] += ad * hshelf(&MEL_CENTER_HZ[b], 6000.0, 1000.0);
+            off[b] += ac * bell(&MEL_CENTER_HZ[b], 2000.0, 1500.0);
         }
+        let apply_he = me != 0.0;
         for t in 0..mel_render.nrows() {
             let mut row = mel_render.row_mut(t);
-            for b in 0..128 { row[b] *= gains[b]; }
+            for b in 0..128 { row[b] += off[b]; }
+            if apply_he {
+                let mut sm = [0.0f32; 128];
+                let w = 2usize;
+                for b in 0usize..128 {
+                    let lo = b.saturating_sub(w);
+                    let hi = (b + w).min(127);
+                    let mut s = 0.0; let mut n = 0;
+                    for j in lo..=hi { s += row[j]; n += 1; }
+                    sm[b] = s / n as f32;
+                }
+                for b in 0..128 { row[b] += me * (row[b] - sm[b]); }
+            }
         }
     }
     let mut render = get_vocoder().lock().unwrap().run(mel_render, f0_render.clone());
