@@ -9,23 +9,29 @@ env:
   BUILD_MODE: --release
 jobs:
   build:
-    name: Build ${{ matrix.ep }} on ${{ matrix.os }}
+    name: Build ${{ matrix.pkg }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Single-EP systems: name reflects the OS only.
           - os: windows-latest
             ep: ep-directml
-            bin: hifiserver-rust-directml
+            pkg: windows
+            bin: hifiserver-rust
           - os: macos-latest
             ep: ep-coreml
-            bin: hifiserver-rust-coreml
+            pkg: macos
+            bin: hifiserver-rust
+          # Linux ships two EPs, so the EP must appear in the name.
           - os: ubuntu-latest
             ep: ep-webgpu
+            pkg: linux-webgpu
             bin: hifiserver-rust-webgpu
           - os: ubuntu-latest
             ep: ep-cuda
+            pkg: linux-cuda
             bin: hifiserver-rust-cuda
     steps:
       - name: Checkout code
@@ -36,6 +42,7 @@ jobs:
         with:
           toolchain: stable
           targets: x86_64-pc-windows-msvc
+
       - name: Cache Cargo dependencies
         uses: actions/cache@v5
         with:
@@ -47,28 +54,33 @@ jobs:
             ${{ matrix.os == 'windows-latest' && '~/AppData/Local/ort.pyke.io' || '' }}
             ${{ matrix.os == 'macos-latest' && '~/Library/Caches/ort.pyke.io' || '' }}
           key: ${{ runner.os }}-cargo-${{ matrix.ep }}-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Build Release
         run: cargo build ${{ env.BUILD_MODE }} --no-default-features --features ${{ matrix.ep }}
+
       - name: Test Compile
         run: cargo test ${{ env.BUILD_MODE }} --no-run --no-default-features --features ${{ matrix.ep }}
+
       - name: Prepare final binary
         shell: bash
         run: |
           mkdir -p artifacts
-          BIN_NAME="hifiserver-rust"
+          SRC="hifiserver-rust"
+          DEST="${{ matrix.bin }}"
           case "${{ matrix.os }}" in
             ubuntu-latest)
-              cp "target/release/$BIN_NAME" "artifacts/${{ matrix.bin }}"
+              cp "target/release/$SRC" "artifacts/$DEST"
               ;;
             windows-latest)
-              cp "target/release/$BIN_NAME.exe" "artifacts/${{ matrix.bin }}.exe"
+              cp "target/release/$SRC.exe" "artifacts/$DEST.exe"
               ;;
             macos-latest)
-              cp "target/release/$BIN_NAME" "artifacts/${{ matrix.bin }}"
+              cp "target/release/$SRC" "artifacts/$DEST"
               ;;
           esac
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v5
         with:
-          name: release-${{ matrix.ep }}
+          name: release-${{ matrix.pkg }}
           path: artifacts/*
