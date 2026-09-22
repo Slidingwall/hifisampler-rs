@@ -68,7 +68,7 @@ pub fn pitch_parser(arg: &str) -> Result<i32> {
     Ok(octave * 12 + note_val)
 }
 pub fn flag_parser(s: &str) -> Result<HashMap<Cow<'static, str>, Option<f32>>> {
-    let input = s.replace('/', "");
+    let input: Cow<'_, str> = if s.contains('/') { Cow::Owned(s.replace('/', "")) } else { Cow::Borrowed(s) };
     let mut flags = HashMap::new();
     FLAG_REGEX.captures_iter(&input).for_each(|cap| {
         let name = cap.get(1).unwrap().as_str();
