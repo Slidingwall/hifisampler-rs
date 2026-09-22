@@ -126,8 +126,8 @@ pub fn resample(args: Arguments) -> Result<()> {
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
         const K: f32 = 0.0069;
         for t in 0..mel_render.nrows() {
-            let row = mel_render.row_mut(t);
-            for b in 0..128 {
+            let mut row = mel_render.row_mut(t);
+            for b in 0usize..128 {
                 row[b] += K * ( resonance * FORMANT_HR[b] + dryness * FORMANT_HD[b] + roughness * FORMANT_HC[b] );
             }
             if formant != 0.0 {
@@ -135,7 +135,7 @@ pub fn resample(args: Arguments) -> Result<()> {
                 const W: usize = 2;
                 let mut sum = 0.0f32;
                 for j in 0..=W { sum += row[j]; }
-                for b in 0..128 {
+                for b in 0usize..128 {
                     let lo = b.saturating_sub(W);
                     let hi = (b + W).min(127);
                     let win_len = (hi - lo +1) as f32;
@@ -144,7 +144,7 @@ pub fn resample(args: Arguments) -> Result<()> {
                     if lo >0 { sum -= row[lo-1]; }
                 }
                 let me = formant * K;
-                for b in 0..128 {
+                for b in 0usize..128 {
                     row[b] += me * (row[b] - sm[b]);
                 }
             }
