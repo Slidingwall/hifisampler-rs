@@ -3,7 +3,7 @@ use ndarray::{Array2, Axis, azip, concatenate, s};
 use tracing::info;
 use crate::{
     audio::{post_process::{loudness_norm, pre_emphasis_base_tension, formant_openness}, read_audio, write_audio},
-    consts::{HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE, MEL_CENTER_HZ},
+    consts::{HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE, FORMANT_HR, FORMANT_HD, FORMANT_HC},
     model::{get_remover, get_vocoder},
     utils::{cache::CACHE_MANAGER, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, reflect_pad_2d, stft::stft_core},
 };
@@ -124,33 +124,29 @@ pub fn resample(args: Arguments) -> Result<()> {
     let dryness = args.flags.get("Hd").copied().flatten().unwrap_or(0.0);
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
-        let ar = resonance * 0.0069;   
-        let ad = dryness * 0.0069;      
-        let ac = roughness * 0.0069;    
-        let me = formant * 0.0069;      
-        let bell = |fc: f32, c: f32, w: f32| (-0.5 * ((fc - c) / w).powi(2)).exp();
-        let hshelf = |fc: f32, c: f32, w: f32| 1.0 / (1.0 + (-(fc - c) / w).exp()); 
-        let mut off = [0.0f32; 128];
-        for b in 0..128 {
-            off[b] += ar * bell(&MEL_CENTER_HZ[b], 3000.0, 900.0);
-            off[b] += ad * hshelf(&MEL_CENTER_HZ[b], 6000.0, 1000.0);
-            off[b] += ac * bell(&MEL_CENTER_HZ[b], 2000.0, 1500.0);
-        }
-        let apply_he = me != 0.0;
+        const K: f32 = 0.0069;
         for t in 0..mel_render.nrows() {
-            let mut row = mel_render.row_mut(t);
-            for b in 0..128 { row[b] += off[b]; }
-            if apply_he {
+            let row = mel_render.row_mut(t);
+            for b in 0..128 {
+                row[b] += K * ( resonance * FORMANT_HR[b] + dryness * FORMANT_HD[b] + roughness * FORMANT_HC[b] );
+            }
+            if formant != 0.0 {
                 let mut sm = [0.0f32; 128];
-                let w = 2usize;
-                for b in 0usize..128 {
-                    let lo = b.saturating_sub(w);
-                    let hi = (b + w).min(127);
-                    let mut s = 0.0; let mut n = 0;
-                    for j in lo..=hi { s += row[j]; n += 1; }
-                    sm[b] = s / n as f32;
+                const W: usize = 2;
+                let mut sum = 0.0f32;
+                for j in 0..=W { sum += row[j]; }
+                for b in 0..128 {
+                    let lo = b.saturating_sub(W);
+                    let hi = (b + W).min(127);
+                    let win_len = (hi - lo +1) as f32;
+                    sm[b] = sum / win_len;
+                    if hi + 1 <128 { sum += row[hi+1]; }
+                    if lo >0 { sum -= row[lo-1]; }
                 }
-                for b in 0..128 { row[b] += me * (row[b] - sm[b]); }
+                let me = formant * K;
+                for b in 0..128 {
+                    row[b] += me * (row[b] - sm[b]);
+                }
             }
         }
     }
