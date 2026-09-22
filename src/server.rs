@@ -31,8 +31,9 @@ pub struct Arguments {
 fn split_arguments(input: &str) -> Result<Arguments> {
     let tokens: Vec<&str> = input.split(' ').collect();
     let len = tokens.len();
-    let split_idx = input.find(".wav ").ok_or_else(|| anyhow::anyhow!("Missing .wav in input"))?;
-    let (in_file, out_file) = input.split_at(split_idx + 4);
+    let prefix = tokens[..len - 11].join(" ");
+    let split_idx = prefix.find(".wav ").ok_or_else(|| anyhow::anyhow!("Missing .wav in input"))?;
+    let (in_file, out_file) = prefix.split_at(split_idx + 4);
     Ok(Arguments {
         in_file: PathBuf::from(in_file),
         out_file: PathBuf::from(out_file.trim_start_matches(' ')),
