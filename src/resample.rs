@@ -125,15 +125,15 @@ pub fn resample(args: Arguments) -> Result<()> {
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
         let fb = &MEL_CENTER_HZ;
-        let bell = |fc: f32, center: f32, width: f32, gain: f32| (-0.5 * ((fc - center) / width).powi(2) * gain).exp();
-        let (gr, gd, gc) = (resonance * 0.01, dryness * 0.01, roughness * 0.01);
+        let (ar, ad, ac) = (resonance * 0.01, dryness * 0.01, roughness * 0.01);
         let formant_k = if formant > 0.0 { 1.0 + 0.005 * formant } else { 1.0 + 0.0025 * formant };
+        let shape = |fc: f32, center: f32, width: f32| (-0.5 * ((fc - center) / width).powi(2)).exp();
         let mut gains = [0.0f32; 128];
         for b in 0..128 {
-            gains[b] = formant_k
-                * bell(fb[b], 3200.0, 1000.0, gr)
-                * bell(fb[b], 6000.0, 2000.0, gd)
-                * bell(fb[b], 4500.0, 1500.0, gc);
+            let s = ar * shape(fb[b], 3200.0, 1000.0)
+                  + ad * shape(fb[b], 6000.0, 2000.0)
+                  + ac * shape(fb[b], 4500.0, 1500.0);
+            gains[b] = (formant_k * (1.0 + s)).max(0.0);
         }
         for t in 0..mel_render.nrows() {
             let mut row = mel_render.row_mut(t);
