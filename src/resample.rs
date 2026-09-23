@@ -3,7 +3,7 @@ use ndarray::{Array2, Axis, azip, concatenate, s};
 use tracing::info;
 use crate::{
     audio::{post_process::{loudness_norm, pre_emphasis_base_tension, formant_openness}, read_audio, write_audio},
-    consts::{HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE, FORMANT_HR, FORMANT_HD, FORMANT_HC},
+    consts::{HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE, FORMANT_HR},
     model::{get_remover, get_vocoder},
     utils::{cache::CACHE_MANAGER, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, reflect_pad_2d, stft::stft_core},
 };
@@ -124,28 +124,29 @@ pub fn resample(args: Arguments) -> Result<()> {
     let dryness = args.flags.get("Hd").copied().flatten().unwrap_or(0.0);
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
-        const K: f32 = 0.0069;
         for t in 0..mel_render.nrows() {
             let mut row = mel_render.row_mut(t);
             for b in 0usize..128 {
-                row[b] += K * ( resonance * FORMANT_HR[b] + dryness * FORMANT_HD[b] + roughness * FORMANT_HC[b] );
+                if resonance != 0.0 {
+                    let mag = FORMANT_HR[b] * 0.1 * resonance.abs();
+                    row[b] += if resonance > 0.0 { (1.0 + mag).ln() } else { -(1.0 + mag).ln() };
+                }
+                if dryness != 0.0 {
+                    row[b] -= 0.025 * dryness;
+                }
+            }
+            if roughness != 0.0 {
+                for b in 0..13 {
+                    let orig = row[b];
+                    let v = orig - 0.05 * roughness;
+                    let floor = orig * roughness * 0.005 * std::f32::consts::LN_2;
+                    row[b] = if v > floor { v } else { floor };
+                }
             }
             if formant != 0.0 {
-                let mut sm = [0.0f32; 128];
-                const W: usize = 2;
-                let mut sum = 0.0f32;
-                for j in 0..=W { sum += row[j]; }
+                let mf = if formant > 0.0 { 1.0 + 0.005 * formant } else { 1.0 + 0.0025 * formant };
                 for b in 0usize..128 {
-                    let lo = b.saturating_sub(W);
-                    let hi = (b + W).min(127);
-                    let win_len = (hi - lo +1) as f32;
-                    sm[b] = sum / win_len;
-                    if hi + 1 <128 { sum += row[hi+1]; }
-                    if lo >0 { sum -= row[lo-1]; }
-                }
-                let me = formant * K;
-                for b in 0usize..128 {
-                    row[b] += me * (row[b] - sm[b]);
+                    row[b] *= mf;
                 }
             }
         }
@@ -190,19 +191,18 @@ pub fn resample(args: Arguments) -> Result<()> {
         growl(&mut render, 80.0, hg.clamp(-100.0, 100.0) * 0.01);
     }
     let drive = args.flags.get("HD").and_then(|x| x.as_ref()).map_or(0.0, |&v| v.clamp(0.0, 100.0) / 100.0);
-    let amt = args.flags.get("Hp").and_then(|x| x.as_ref()).map_or(0.0, |&v| v.clamp(0.0, 100.0) / 100.0);
-    if drive > 0.0 || amt > 0.0 {
-        let k = 1.0 + drive * 4.0;
+    let unease = args.flags.get("Hp").and_then(|x| x.as_ref()).map_or(0.0, |&v| v.clamp(0.0, 100.0) / 100.0);
+    if drive > 0.0 || unease > 0.0 {
+        let sat = 1.0 + drive;
         for (i, s) in render.iter_mut().enumerate() {
             let mut x = *s;
             if drive > 0.0 {
-                let v = x * k;
-                x = if v > 1.0 { 1.0 } else if v < -1.0 { -1.0 } else { v * (2.0 - v.abs()) };
+                x = (x * sat).tanh();
             }
-            if amt > 0.0 {
+            if unease > 0.0 {
                 let h = (i as u32).wrapping_mul(2654435761).rotate_left(13);
                 let r = (h & 0x1FFFF) as f32 / 65536.0 - 1.0;
-                x *= 1.0 + amt * 0.08 * r;
+                x *= 1.0 + unease * 0.08 * r;
             }
             *s = x;
         }
