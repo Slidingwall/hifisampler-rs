@@ -3,8 +3,8 @@ use ndarray::{Array2, Axis};
 use crate::{audio::base_coeff::BASE_COEFF, consts::{HIFI_CONFIG, SAMPLE_RATE}, utils::reflect_pad_1d};
 pub fn formant_openness(wave: &mut [f32], f0_per_frame: &[f32], hop: usize, sr: f32, openness: f32) {
     if openness == 0.0 || f0_per_frame.is_empty() { return; }
-    let db = openness.clamp(-100.0, 100.0) / 100.0 * 6.0;
-    let a = 10.0f32.powf(db / 40.0);
+    let g0 = 1.413_f32;
+    let a = g0.powf(-openness.clamp(-100.0, 100.0) / 300.0);
     let two_pi_over_sr = 2.0 * std::f32::consts::PI / sr;
     let nf = f0_per_frame.len();
     let mut x1 = 0.0f32; let mut x2 = 0.0f32;
