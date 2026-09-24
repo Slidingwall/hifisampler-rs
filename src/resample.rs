@@ -25,6 +25,7 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
     let spec_mix = stft_core(&wave); 
     let (_, freq_bins, frames) = spec_mix.dim(); 
     let mut spec_amp = Array2::zeros((freq_bins, frames));
+    let mut amp_max = 0.0f32;
     if tension != 0.0 || breath != voicing {
         let (bre, voi) = (breath.clamp(0.0,500.0)*0.01, voicing.clamp(0.0,150.0)*0.01);
         let seg = CACHE_MANAGER.load_hnsep_cache(&args.in_file.with_file_name(format!("{fname}.hnsep.bin")), ignore_cache)
@@ -34,26 +35,31 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
                 s
             });
         if tension != 0.0 {
-            let mut tensed = Array2::zeros(seg.dim());
-            azip!((t in &mut tensed, sm in &seg) { *t = sm * voi; });
+            let mut tensed = seg.mapv(|sm| sm * voi);
             pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02);
             azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg, t in &tensed) {
                 let mix_mag = r.hypot(i);
-                *o = (bre * (mix_mag - sm) + t).abs();
+                let a = (bre * (mix_mag - sm) + t).abs();
+                *o = a;
+                if a > amp_max { amp_max = a; }
             });
         } else {
             azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg) {
                 let mix_mag = r.hypot(i);
-                *o = (bre * (mix_mag - sm) + sm * voi).abs();
+                let a = (bre * (mix_mag - sm) + sm * voi).abs();
+                *o = a;
+                if a > amp_max { amp_max = a; }
             });
         }
     } else {
         let factor = breath * 0.01;
         azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..])) {
-            *o = r.hypot(i) * factor;
+            let a = r.hypot(i) * factor;
+            *o = a;
+            if a > amp_max { amp_max = a; }
         });
     }
-    let scale = 256.0 / spec_amp.iter().fold(0.0_f32, |m, &x| m.max(x)).max(256.0);
+    let scale = 256.0 / amp_max.max(256.0);
     spec_amp.mapv_inplace(|x| x * scale);
     let features = (mel(&spec_amp, gender.clamp(-600.0,600.0)*0.01), scale);
     CACHE_MANAGER.save_features_cache(&features_path, &features);
@@ -172,11 +178,10 @@ pub fn resample(args: Arguments) -> Result<()> {
         let n = pitch_render.len();
         let mut g = vec![0.; n];
         if n>1 {
-            g[0]=pitch_render[1]-pitch_render[0];
-            for i in 1..n-1{g[i]=(pitch_render[i+1]-pitch_render[i-1])*0.5;}
-            g[n-1]=pitch_render[n-1]-pitch_render[n-2];
+            g[0]=5f32.powf(a*(pitch_render[1]-pitch_render[0]));
+            for i in 1..n-1{g[i]=5f32.powf(a*((pitch_render[i+1]-pitch_render[i-1])*0.5));}
+            g[n-1]=5f32.powf(a*(pitch_render[n-1]-pitch_render[n-2]));
         }
-        for d in &mut g{*d=5f32.powf(a * *d);}
         let last=(g.len()-1)as f32;
         let step=(new_end-new_start)/(render.len()as f32*THOP);
         let start=new_start/THOP;

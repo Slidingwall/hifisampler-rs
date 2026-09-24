@@ -1,19 +1,25 @@
 use crate::{consts::{FFT_SIZE, EPSILON}, utils::{interp::spec_interp, mel_basis::MEL_BASIS_DATA}};
-use ndarray::{Array2, Axis, azip};
+use ndarray::{Array2, Axis};
 pub fn mel(spec:&Array2<f32>,key_shift:f32)->Array2<f32>{
     let (inf, ot) = spec.dim();
     let mut mel_spec = Array2::zeros((128, ot));
     let target_time = ((ot-1)as f32 *4.).round() as usize +1;
     let mut process_mel = |data: &Array2<f32>| {
         let nrows = data.nrows();
-        azip!((mut row in mel_spec.axis_iter_mut(Axis(0)), filter in &MEL_BASIS_DATA) {
+        let ot = data.ncols();
+        let data_slice = data.as_slice().unwrap();
+        let mel_slice = mel_spec.as_slice_mut().unwrap();
+        for (b, filter) in MEL_BASIS_DATA.iter().enumerate() {
             let n_valid = filter.iter().take_while(|&&(f, _)| f < nrows).count();
-            for (t, val) in row.iter_mut().enumerate() {
+            let base = b * ot;
+            for t in 0..ot {
                 let mut sum = 0.0;
-                for &(f, w) in &filter[..n_valid] { sum += data[(f, t)] * w; }
-                *val = sum;
+                for &(f, w) in &filter[..n_valid] {
+                    sum += data_slice[f * ot + t] * w;
+                }
+                mel_slice[base + t] = sum;
             }
-        });
+        }
     };
     if key_shift.abs() < EPSILON {
         process_mel(spec);
