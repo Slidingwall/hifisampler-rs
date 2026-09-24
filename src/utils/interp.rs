@@ -17,22 +17,17 @@ pub fn akima(y: &[f32], xi: &[f32]) -> Vec<f32> {
     }
     let left_extrap = 3.0 * y[1] - 2.0 * y[0] - y[2];
     let right_extrap = 2.0 * y[n-1] - 3.0 * y[n-2] + y[n-3];
-    let slope = |idx: i32| -> f32 {
-        if idx < 0 {
-            left_extrap
-        } else if idx >= (n - 1) as i32 {
-            right_extrap
-        } else {
-            y[idx as usize + 1] - y[idx as usize]
-        }
-    };
+    let mut s = vec![left_extrap; n + 3];
+    for (i, &v) in y[..n - 1].iter().enumerate() {
+        s[i + 2] = y[i + 1] - v;
+    }
+    s[n + 1..].fill(right_extrap);
     let mut m = vec![0.0; n];
     for i in 0..n {
-        let i32 = i as i32;
-        let s0 = slope(i32 - 2);
-        let s1 = slope(i32 - 1);
-        let s2 = slope(i32);
-        let s3 = slope(i32 + 1);
+        let s0 = s[i];
+        let s1 = s[i + 1];
+        let s2 = s[i + 2];
+        let s3 = s[i + 3];
         let w1 = (s3 - s2).abs();
         let w2 = (s1 - s0).abs();
         m[i] = if w1 + w2 < EPSILON {
@@ -109,32 +104,57 @@ pub fn spec_interp(
 ) -> Array2<f32> {
     let mut out = Array2::zeros(output_shape);
     let input_len = input.len_of(interp_axis) as isize;
-    let output_len = out.len_of(interp_axis) as isize;
-    let iter_axis = Axis(1 - interp_axis.0);
-    azip!((mut out_slice in out.axis_iter_mut(iter_axis), in_slice in input.axis_iter(iter_axis)) {
-        let ln_buf: Vec<f32> = in_slice.iter().map(|&v| (v + EPSILON).ln()).collect();
-        for i in 0..output_len as usize {
-            let (idx, frac) = get_pos(i);
-            let mut sum = 0.0;
-            let mut weight_sum = 0.0;
-            for t in -3..=3 {
-                let pos = idx + t;
-                if pos >= 0 && pos < input_len {
-                    let x = t as f32 - frac;
-                    let weight = if x == 0.0 {
-                        1.0
-                    } else if x.abs() < 3.0 {
-                        let pix = PI * x;
-                        (pix.sin() * (pix / 3.0).sin()) / (pix * pix)
-                    } else {
-                        0.0
-                    };
-                    sum += ln_buf[pos as usize] * weight;
-                    weight_sum += weight;
-                }
+    let output_len = out.len_of(interp_axis) as usize;
+    let other_axis = Axis(1 - interp_axis.0);
+    let other_len = out.len_of(other_axis);
+    let mut ln_input = Array2::zeros(input.raw_dim());
+    azip!((l in &mut ln_input, &v in input) { *l = (v + EPSILON).ln(); });
+    let ln_slice = ln_input.as_slice().unwrap();
+    let out_slice = out.as_slice_mut().unwrap();
+    let (out_stride_i, out_stride_k) = if interp_axis == Axis(0) {
+        (other_len, 1usize)
+    } else {
+        (1usize, output_len)
+    };
+    let (ln_stride_pos, ln_stride_k) = if interp_axis == Axis(0) {
+        (other_len, 1usize)
+    } else {
+        (1usize, input.len_of(Axis(1)))
+    };
+    let mut weights = [0.0f32; 7];
+    for i in 0..output_len {
+        let (idx, frac) = get_pos(i);
+        let mut weight_sum = 0.0;
+        for (ti, t) in (-3..=3).enumerate() {
+            let pos = idx + t;
+            if pos >= 0 && pos < input_len {
+                let x = t as f32 - frac;
+                weights[ti] = if x == 0.0 {
+                    1.0
+                } else if x.abs() < 3.0 {
+                    let pix = PI * x;
+                    (pix.sin() * (pix / 3.0).sin()) / (pix * pix)
+                } else {
+                    0.0
+                };
+                weight_sum += weights[ti];
+            } else {
+                weights[ti] = 0.0;
             }
-            out_slice[i] = if weight_sum > EPSILON { sum / weight_sum } else { 0.0 };
         }
-    });
+        if weight_sum > EPSILON {
+            let out_base = i * out_stride_i;
+            for k in 0..other_len {
+                let mut sum = 0.0;
+                for (ti, t) in (-3..=3).enumerate() {
+                    let pos = idx + t;
+                    if pos >= 0 && pos < input_len {
+                        sum += ln_slice[pos as usize * ln_stride_pos + k * ln_stride_k] * weights[ti];
+                    }
+                }
+                out_slice[out_base + k * out_stride_k] = sum / weight_sum;
+            }
+        }
+    }
     out
 }

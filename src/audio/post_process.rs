@@ -6,13 +6,12 @@ pub fn formant_openness(wave: &mut [f32], f0_per_frame: &[f32], hop: usize, sr: 
     let g0 = 1.413_f32;
     let a = g0.powf(-openness.clamp(-100.0, 100.0) / 300.0);
     let two_pi_over_sr = 2.0 * std::f32::consts::PI / sr;
-    let nf = f0_per_frame.len();
     let mut x1 = 0.0f32; let mut x2 = 0.0f32;
     let mut y1 = 0.0f32; let mut y2 = 0.0f32;
     let mut cur_fc = -1.0f32;
     let mut b0 = 1.0f32; let mut b1 = 0.0f32; let mut b2 = 0.0f32; let mut a1 = 0.0f32; let mut a2 = 0.0f32;
-    for (i, s) in wave.iter_mut().enumerate() {
-        let fc = f0_per_frame[(i / hop).min(nf - 1)];
+    let nf = (wave.len() + hop - 1) / hop;
+    for (fi, &fc) in f0_per_frame.iter().take(nf).enumerate() {
         if (fc - cur_fc).abs() > 0.5 {
             cur_fc = fc;
             let w0 = two_pi_over_sr * fc;
@@ -26,9 +25,13 @@ pub fn formant_openness(wave: &mut [f32], f0_per_frame: &[f32], hop: usize, sr: 
             a1 = (-2.0 * cosw) / a0;
             a2 = (1.0 - alpha / a) / a0;
         }
-        let y = b0 * (*s) + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-        x2 = x1; x1 = *s; y2 = y1; y1 = y;
-        *s = y;
+        let start = fi * hop;
+        let end = (start + hop).min(wave.len());
+        for s in &mut wave[start..end] {
+            let y = b0 * (*s) + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1; x1 = *s; y2 = y1; y1 = y;
+            *s = y;
+        }
     }
 }
 pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32) {

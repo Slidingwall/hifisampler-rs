@@ -5,10 +5,12 @@ pub fn mel(spec:&Array2<f32>,key_shift:f32)->Array2<f32>{
     let mut mel_spec = Array2::zeros((128, ot));
     let target_time = ((ot-1)as f32 *4.).round() as usize +1;
     let mut process_mel = |data: &Array2<f32>| {
+        let nrows = data.nrows();
         azip!((mut row in mel_spec.axis_iter_mut(Axis(0)), filter in &MEL_BASIS_DATA) {
+            let n_valid = filter.iter().take_while(|&&(f, _)| f < nrows).count();
             for (t, val) in row.iter_mut().enumerate() {
                 let mut sum = 0.0;
-                for &(f, w) in *filter { if f < data.nrows() { sum += data[(f, t)] * w; } }
+                for &(f, w) in &filter[..n_valid] { sum += data[(f, t)] * w; }
                 *val = sum;
             }
         });

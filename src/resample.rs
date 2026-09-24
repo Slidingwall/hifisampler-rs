@@ -33,15 +33,20 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
                 CACHE_MANAGER.save_hnsep_cache(&args.in_file.with_file_name(format!("{fname}.hnsep.bin")), &s);
                 s
             });
-        let mut tensed = Array2::zeros(seg.dim());
-        azip!((t in &mut tensed, sm in &seg) { *t = sm * voi; });
         if tension != 0.0 {
+            let mut tensed = Array2::zeros(seg.dim());
+            azip!((t in &mut tensed, sm in &seg) { *t = sm * voi; });
             pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02);
+            azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg, t in &tensed) {
+                let mix_mag = r.hypot(i);
+                *o = (bre * (mix_mag - sm) + t).abs();
+            });
+        } else {
+            azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg) {
+                let mix_mag = r.hypot(i);
+                *o = (bre * (mix_mag - sm) + sm * voi).abs();
+            });
         }
-        azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg, t in &tensed) {
-            let mix_mag = r.hypot(i);
-            *o = (bre * (mix_mag - sm) + t).abs();
-        });
     } else {
         let factor = breath * 0.01;
         azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..])) {
@@ -101,10 +106,8 @@ pub fn resample(args: Arguments) -> Result<()> {
         .collect();
     let n_frames = idx_stretched.len();
     info!("Stretched time axis length: {}", n_frames);
-    let mut pitch: Vec<f32> = args.pitchbend.iter().map(|&pb| pb + args.pitch).collect();
-    if let Some(&t_flag) = args.flags.get("t").and_then(|x| x.as_ref()) {
-        pitch.iter_mut().for_each(|p| *p += t_flag * 0.01);
-    }
+    let t_shift = args.flags.get("t").and_then(|x| x.as_ref()).map_or(0.0, |&t| t * 0.01);
+    let pitch: Vec<f32> = args.pitchbend.iter().map(|&pb| pb + args.pitch + t_shift).collect();
     let cut_left_f = cut_left as f32 * THOP;
     let (new_start, new_end) = (args.offset * vel - cut_left_f, length_req + vel_con - cut_left_f);
     let step_pitch = 0.625 / args.tempo;
@@ -124,12 +127,16 @@ pub fn resample(args: Arguments) -> Result<()> {
     let dryness = args.flags.get("Hd").copied().flatten().unwrap_or(0.0);
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
+        let res_ln: Vec<f32> = if resonance != 0.0 {
+            (0..128).map(|b| (1.0 + FORMANT_HR[b] * 0.1 * resonance.abs()).ln()).collect()
+        } else {
+            Vec::new()
+        };
         for t in 0..mel_render.nrows() {
             let mut row = mel_render.row_mut(t);
             for b in 0usize..128 {
                 if resonance != 0.0 {
-                    let mag = FORMANT_HR[b] * 0.1 * resonance.abs();
-                    row[b] += if resonance > 0.0 { (1.0 + mag).ln() } else { -(1.0 + mag).ln() };
+                    row[b] += if resonance > 0.0 { res_ln[b] } else { -res_ln[b] };
                 }
                 if dryness != 0.0 {
                     row[b] -= 0.025 * dryness;

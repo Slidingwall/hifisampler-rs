@@ -1,5 +1,5 @@
 use crate::{consts::{FFT_SIZE, HOP_SIZE}, utils::hann_window::HANN_WINDOW};
-use ndarray::{ArrayView1, Array3, Axis ,parallel::prelude::*};
+use ndarray::{Array3, Axis, parallel::prelude::*, s};
 use once_cell::sync::Lazy;
 use phastft::{planner::PlannerR2c32, r2c_fft_f32_with_planner};
 static FFT_PLANNER: Lazy<PlannerR2c32> = Lazy::new(|| PlannerR2c32::new(FFT_SIZE));
@@ -29,13 +29,15 @@ pub fn stft_core(signal: &[f32]) -> Array3<f32> {
                 for i in slice_len..FFT_SIZE {
                     real_input[i] = 0.0;
                 }
-                RE_BUF.with(|re_cell| {
-                    IM_BUF.with(|im_cell| {
-                        let mut spec_re = re_cell.borrow_mut();
-                        let mut spec_im = im_cell.borrow_mut();
-                        r2c_fft_f32_with_planner(&real_input[..], &mut spec_re[..], &mut spec_im[..], planner);
-                        frame_view.row_mut(0).assign(&ArrayView1::from(&*spec_re));
-                        frame_view.row_mut(1).assign(&ArrayView1::from(&*spec_im));
+                RE_BUF.with(|rb| {
+                    IM_BUF.with(|ib| {
+                        let (mut re, mut im) = (rb.borrow_mut(), ib.borrow_mut());
+                        r2c_fft_f32_with_planner(&real_input[..], re.as_mut_slice(), im.as_mut_slice(), planner);
+                        let (mut spec_re, mut spec_im) = frame_view.multi_slice_mut((s![0, ..], s![1, ..]));
+                        for (j, (&rv, &iv)) in re.iter().zip(im.iter()).enumerate() {
+                            spec_re[j] = rv;
+                            spec_im[j] = iv;
+                        }
                     });
                 });
             });
