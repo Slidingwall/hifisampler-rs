@@ -35,14 +35,7 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
                 s
             });
         if tension != 0.0 {
-            let mut tensed = seg.mapv(|sm| sm * voi);
-            pre_emphasis_base_tension(&mut tensed, -tension.clamp(-100.0,100.0)*0.02);
-            azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg, t in &tensed) {
-                let mix_mag = r.hypot(i);
-                let a = (bre * (mix_mag - sm) + t).abs();
-                *o = a;
-                if a > amp_max { amp_max = a; }
-            });
+            amp_max = pre_emphasis_base_tension(&mut spec_amp, &spec_mix, &seg, -tension.clamp(-100.0,100.0)*0.02, bre, voi);
         } else {
             azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg) {
                 let mix_mag = r.hypot(i);

@@ -1,5 +1,5 @@
 use ebur128::{EbuR128, Mode};
-use ndarray::{Array2, Axis};
+use ndarray::{Array2, Array3};
 use crate::{audio::base_coeff::BASE_COEFF, consts::{HIFI_CONFIG, SAMPLE_RATE}, utils::reflect_pad_1d};
 pub fn formant_openness(wave: &mut [f32], f0_per_frame: &[f32], hop: usize, sr: f32, openness: f32) {
     if openness == 0.0 || f0_per_frame.is_empty() { return; }
@@ -34,20 +34,39 @@ pub fn formant_openness(wave: &mut [f32], f0_per_frame: &[f32], hop: usize, sr: 
         }
     }
 }
-pub fn pre_emphasis_base_tension(spec: &mut Array2<f32>, b: f32) {
+pub fn pre_emphasis_base_tension(
+    out: &mut Array2<f32>,
+    spec_mix: &Array3<f32>,
+    seg: &Array2<f32>,
+    b: f32,
+    bre: f32,
+    voi: f32,
+) -> f32 {
+    let (_, freq_bins, n_frames) = spec_mix.dim();
+    let scales: Vec<f32> = (0..freq_bins).map(|j| (b * BASE_COEFF[j]).clamp(-2.0, 2.0).exp()).collect();
     let mut orig_max = 0.0f32;
     let mut f_max = 0.0f32;
-    spec.axis_iter_mut(Axis(0)).enumerate().for_each(|(j, mut bin)| {
-        let coeff = b * BASE_COEFF[j];
-        let scale = coeff.clamp(-2.0, 2.0).exp();
-        for v in bin.iter_mut() {
-            if *v > orig_max { orig_max = *v; }
-            *v *= scale;
-            if *v > f_max { f_max = *v; }
+    for j in 0..freq_bins {
+        let scale = scales[j];
+        for k in 0..n_frames {
+            let t = seg[[j, k]] * voi;
+            if t > orig_max { orig_max = t; }
+            let ts = t * scale;
+            if ts > f_max { f_max = ts; }
         }
-    });
+    }
     let gain = (orig_max / f_max) * ((-b / 15.0).clamp(0.0, 0.33) + 1.0);
-    spec.mapv_inplace(|x| x * gain);
+    let mut amp_max = 0.0f32;
+    for j in 0..freq_bins {
+        let scale = scales[j];
+        for k in 0..n_frames {
+            let mix_mag = spec_mix[[0, j, k]].hypot(spec_mix[[1, j, k]]);
+            let a = (bre * (mix_mag - seg[[j, k]]) + seg[[j, k]] * voi * scale * gain).abs();
+            out[[j, k]] = a;
+            if a > amp_max { amp_max = a; }
+        }
+    }
+    amp_max
 }
 pub fn loudness_norm(wave: &mut Vec<f32>, target: f32, norm_strength: u8) {
     let orig_len = wave.len();
