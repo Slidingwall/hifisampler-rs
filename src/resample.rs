@@ -171,9 +171,9 @@ pub fn resample(args: Arguments) -> Result<()> {
         let n = pitch_render.len();
         let mut g = vec![0.; n];
         if n>1 {
-            g[0]=5f32.powf(a*(pitch_render[1]-pitch_render[0]));
-            for i in 1..n-1{g[i]=5f32.powf(a*((pitch_render[i+1]-pitch_render[i-1])*0.5));}
-            g[n-1]=5f32.powf(a*(pitch_render[n-1]-pitch_render[n-2]));
+            g[0]=(a*(pitch_render[1]-pitch_render[0])*2.321928094887362).exp2();
+            for i in 1..n-1{g[i]=(a*((pitch_render[i+1]-pitch_render[i-1])*0.5)*2.321928094887362).exp2();}
+            g[n-1]=(a*(pitch_render[n-1]-pitch_render[n-2])*2.321928094887362).exp2();
         }
         let last=(g.len()-1)as f32;
         let step=(new_end-new_start)/(render.len()as f32*THOP);
