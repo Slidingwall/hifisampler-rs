@@ -3,7 +3,7 @@ use ndarray::{Array2, Axis, azip, concatenate, s};
 use tracing::info;
 use crate::{
     audio::{post_process::{formant_openness, loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio},
-    consts::{HIFI_CONFIG, HOP_SIZE, MEL_BIN_CENTER_HZ, ORIGIN_HOP_SIZE, SAMPLE_RATE},
+    consts::{HIFI_CONFIG, HOP_SIZE, FORMANT_HR, ORIGIN_HOP_SIZE, SAMPLE_RATE},
     model::{get_remover, get_vocoder},
     utils::{cache::CACHE_MANAGER, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, reflect_pad_2d, stft::stft_core},
 };
@@ -128,25 +128,20 @@ pub fn resample(args: Arguments) -> Result<()> {
     let openness = args.flags.get("Ho").copied().flatten().unwrap_or(0.0);
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
     if resonance != 0.0 || formant != 0.0 || roughness != 0.0 {
+        let mf = if formant > 0.0 { 1.0 + 0.005 * formant } else { 1.0 + 0.0025 * formant };
         let res_ln: Vec<f32> = if resonance != 0.0 {
-            let r = (-std::f32::consts::PI * 1000.0 / SR).exp();
-            let r2 = r * r;
-            let c0 = (2.0 * std::f32::consts::PI * 3200.0 / SR).cos();
-            let den0 = (1.0 - r) * (1.0 - r);
             let neg = if resonance < 0.0 { 0.09900990099009901 } else { 1.0 };
-            (0..128).map(|b| {
-                let w = 2.0 * std::f32::consts::PI * MEL_BIN_CENTER_HZ[b] / SR;
-                let (sw, cw) = w.sin_cos();
-                let re = 1.0 - 2.0 * r * c0 * cw + r2 * (2.0 * cw * cw - 1.0);
-                let im = 2.0 * r * c0 * sw - r2 * 2.0 * sw * cw;
-                let den = re.hypot(im).max(1e-12);
-                (1.0 + 0.1 * resonance * (den0 / den) * neg).ln()
-            }).collect()
+            FORMANT_HR.iter().map(|&ratio| (1.0 + 0.1 * resonance * ratio * neg).ln()).collect()
         } else {
             Vec::new()
         };
         for t in 0..mel_render.nrows() {
             let mut row = mel_render.row_mut(t);
+            if formant != 0.0 {
+                for b in 0usize..128 {
+                    row[b] *= mf;
+                }
+            }
             for b in 0usize..128 {
                 if resonance != 0.0 {
                     row[b] += res_ln[b];
@@ -158,12 +153,6 @@ pub fn resample(args: Arguments) -> Result<()> {
                     let v = orig - 0.05 * roughness;
                     let floor = orig * roughness * 0.005 * std::f32::consts::LN_2;
                     row[b] = if v > floor { v } else { floor };
-                }
-            }
-            if formant != 0.0 {
-                let mf = if formant > 0.0 { 1.0 + 0.005 * formant } else { 1.0 + 0.0025 * formant };
-                for b in 0usize..128 {
-                    row[b] *= mf;
                 }
             }
         }
