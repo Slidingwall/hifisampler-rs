@@ -2,8 +2,8 @@ use anyhow::Result;
 use ndarray::{Array2, Axis, azip, concatenate, s};
 use tracing::info;
 use crate::{
-    audio::{post_process::{loudness_norm, pre_emphasis_base_tension, formant_openness}, read_audio, write_audio},
-    consts::{HIFI_CONFIG, HOP_SIZE, ORIGIN_HOP_SIZE, SAMPLE_RATE, FORMANT_HR},
+    audio::{post_process::{formant_openness, loudness_norm, pre_emphasis_base_tension}, read_audio, write_audio},
+    consts::{HIFI_CONFIG, HOP_SIZE, MEL_BIN_CENTER_HZ, ORIGIN_HOP_SIZE, SAMPLE_RATE},
     model::{get_remover, get_vocoder},
     utils::{cache::CACHE_MANAGER, growl::growl, interp::{akima, interp1d}, mel::mel, midi_to_hz, reflect_pad_2d, stft::stft_core},
 };
@@ -15,9 +15,10 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
     let breath = args.flags.get("Hb").copied().flatten().unwrap_or(100.0);
     let voicing = args.flags.get("Hv").copied().flatten().unwrap_or(100.0);
     let tension = args.flags.get("Ht").copied().flatten().unwrap_or(0.0);
+    let dryness = args.flags.get("Hd").copied().flatten().unwrap_or(0.0);
     let gender = args.flags.get("g").copied().flatten().unwrap_or(0.0);
     let fname = args.in_file.file_stem().unwrap().to_str().unwrap();
-    let features_path = args.in_file.with_file_name(format!("{fname}_Hb{breath}Hv{voicing}Ht{tension}g{gender}.hifi.bin"));
+    let features_path = args.in_file.with_file_name(format!("{fname}_Hb{breath}Hv{voicing}Ht{tension}Hd{dryness}g{gender}.hifi.bin"));
     let ignore_cache = args.flags.contains_key("G");
     if let Some(feats) = CACHE_MANAGER.load_features_cache(&features_path, ignore_cache) { return Ok(feats); }
     info!("Generating features: {}", features_path.display());
@@ -26,7 +27,7 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
     let (_, freq_bins, frames) = spec_mix.dim(); 
     let mut spec_amp = Array2::zeros((freq_bins, frames));
     let mut amp_max = 0.0f32;
-    if tension != 0.0 || breath != voicing {
+    if tension != 0.0 || breath != voicing || dryness != 0.0 {
         let (bre, voi) = (breath.clamp(0.0,500.0)*0.01, voicing.clamp(0.0,150.0)*0.01);
         let seg = CACHE_MANAGER.load_hnsep_cache(&args.in_file.with_file_name(format!("{fname}.hnsep.bin")), ignore_cache)
             .unwrap_or_else(|| {
@@ -37,9 +38,10 @@ fn get_features(args: &Arguments) -> Result<(Array2<f32>, f32)> {
         if tension != 0.0 {
             amp_max = pre_emphasis_base_tension(&mut spec_amp, &spec_mix, &seg, -tension.clamp(-100.0,100.0)*0.02, bre, voi);
         } else {
+            let k = (0.025 * dryness).exp();
             azip!((o in &mut spec_amp, &r in spec_mix.slice(s![0, .., ..]), &i in spec_mix.slice(s![1, .., ..]), sm in &seg) {
                 let mix_mag = r.hypot(i);
-                let a = (bre * (mix_mag - sm) + sm * voi).abs();
+                let a = (bre * (mix_mag - sm) / k + sm * voi * k).abs();
                 *o = a;
                 if a > amp_max { amp_max = a; }
             });
@@ -123,11 +125,23 @@ pub fn resample(args: Arguments) -> Result<()> {
     let mut mel_render = interp1d(&mel_origin, &idx_stretched);
     let resonance = args.flags.get("Hr").copied().flatten().unwrap_or(0.0);
     let formant = args.flags.get("HE").copied().flatten().unwrap_or(0.0);
-    let dryness = args.flags.get("Hd").copied().flatten().unwrap_or(0.0);
+    let openness = args.flags.get("Ho").copied().flatten().unwrap_or(0.0);
     let roughness = args.flags.get("HC").copied().flatten().unwrap_or(0.0);
-    if resonance != 0.0 || formant != 0.0 || dryness != 0.0 || roughness != 0.0 {
+    if resonance != 0.0 || formant != 0.0 || roughness != 0.0 {
         let res_ln: Vec<f32> = if resonance != 0.0 {
-            (0..128).map(|b| (1.0 + FORMANT_HR[b] * 0.1 * resonance.abs()).ln()).collect()
+            let r = (-std::f32::consts::PI * 1000.0 / SR).exp();
+            let r2 = r * r;
+            let c0 = (2.0 * std::f32::consts::PI * 3200.0 / SR).cos();
+            let den0 = (1.0 - r) * (1.0 - r);
+            let neg = if resonance < 0.0 { 0.09900990099009901 } else { 1.0 };
+            (0..128).map(|b| {
+                let w = 2.0 * std::f32::consts::PI * MEL_BIN_CENTER_HZ[b] / SR;
+                let (sw, cw) = w.sin_cos();
+                let re = 1.0 - 2.0 * r * c0 * cw + r2 * (2.0 * cw * cw - 1.0);
+                let im = 2.0 * r * c0 * sw - r2 * 2.0 * sw * cw;
+                let den = re.hypot(im).max(1e-12);
+                (1.0 + 0.1 * resonance * (den0 / den) * neg).ln()
+            }).collect()
         } else {
             Vec::new()
         };
@@ -135,10 +149,7 @@ pub fn resample(args: Arguments) -> Result<()> {
             let mut row = mel_render.row_mut(t);
             for b in 0usize..128 {
                 if resonance != 0.0 {
-                    row[b] += if resonance > 0.0 { res_ln[b] } else { -res_ln[b] };
-                }
-                if dryness != 0.0 {
-                    row[b] -= 0.025 * dryness;
+                    row[b] += res_ln[b];
                 }
             }
             if roughness != 0.0 {
@@ -158,10 +169,8 @@ pub fn resample(args: Arguments) -> Result<()> {
         }
     }
     let mut render = get_vocoder().lock().unwrap().run(mel_render, f0_render.clone());
-    if let Some(&ho) = args.flags.get("Ho").and_then(|x| x.as_ref()) {
-        if ho != 0.0 {
-            formant_openness(&mut render, &f0_render, HOP_SIZE, SAMPLE_RATE as f32, ho);
-        }
+    if openness != 0.0 {
+        formant_openness(&mut render, &f0_render, HOP_SIZE, SAMPLE_RATE as f32, openness);
     }
     render.drain(((new_end * SR).min(render.len() as f32) as usize)..);
     render.drain(..(new_start * SR) as usize);
